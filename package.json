@@ -1,0 +1,41 @@
+{
+  "name": "pixel-neu",
+  "private": true,
+  "version": "0.1.0",
+  "description": "像素东大 · Pixel NEU —— 东北大学南湖校区像素风多人校园漫游",
+  "author": "谜团 mituan",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mituan-ai/pixel-neu.git"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "server": "node --watch server/main.ts",
+    "build": "tsc --noEmit && vite build",
+    "start": "node server/main.ts",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "osm": "node tools/osm.ts",
+    "map": "node tools/map.ts",
+    "art": "node tools/art.ts"
+  },
+  "dependencies": {
+    "@colyseus/core": "^0.18.10",
+    "@colyseus/schema": "^5.0.43",
+    "@colyseus/sdk": "^0.18.9",
+    "@colyseus/ws-transport": "^0.18.4",
+    "phaser": "^4.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}
