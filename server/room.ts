@@ -4,9 +4,10 @@ import { readFileSync } from 'node:fs';
 import { Room, type Client } from '@colyseus/core';
 import { CHAT_COOLDOWN, EMOTES, EVENT, MSG, PHRASES, ROOM_MAX, cleanLook, cleanName } from '../shared/social.ts';
 import { CampusState, Player } from '../shared/state.ts';
-import { LAYER, WALK_SPEED, Walkable, prop, type TiledMap } from '../shared/world.ts';
+import { DEV_BOOST, LAYER, WALK_SPEED, Walkable, prop, type TiledMap } from '../shared/world.ts';
 
-const map: TiledMap = JSON.parse(readFileSync(new URL('../assets/map.json', import.meta.url), 'utf8'));
+/** 地图：线上由 MAP_FILE 指定（打包后相对路径不可靠），开发时读仓库里的 assets/map.json */
+const map: TiledMap = JSON.parse(readFileSync(process.env.MAP_FILE ?? new URL('../assets/map.json', import.meta.url), 'utf8'));
 const walk = new Walkable(map);
 const spawn = (() => {
   const layer = map.layers.find((l) => l.name === LAYER.objects);
@@ -17,6 +18,8 @@ const spawn = (() => {
 
 /** 允许的速度余量：网络抖动时两次上报间隔不均匀 */
 const SPEED_SLACK = 1.6;
+/** 本地开发（npm run server 带 --dev）放行开发者模式的 Shift 加速 */
+const MAX_SPEED = WALK_SPEED * (process.argv.includes('--dev') ? DEV_BOOST : 1);
 
 interface Seen {
   x: number;
@@ -39,8 +42,8 @@ export class CampusRoom extends Room<{ state: CampusState }> {
       const x = Number(m.x), y = Number(m.y);
       if (!Number.isFinite(x) || !Number.isFinite(y)) return;
       const now = Date.now();
-      const maxStep = (WALK_SPEED * SPEED_SLACK * Math.max(50, now - s.t)) / 1000 + 4;
-      if (Math.hypot(x - s.x, y - s.y) > maxStep || walk.footBlocked(x, y)) {
+      const maxStep = (MAX_SPEED * SPEED_SLACK * Math.max(50, now - s.t)) / 1000 + 4;
+      if (Math.hypot(x - s.x, y - s.y) > maxStep || walk.footBlocked(x, y) || !walk.reachable(s, { x, y })) {
         client.send(EVENT.snap, { x: s.x, y: s.y });
         return;
       }

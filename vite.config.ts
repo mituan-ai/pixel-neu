@@ -10,9 +10,9 @@ export default defineConfig({
   // Phaser 本身就有约 1.5 MB（gzip 后约 420 KB），整包加载即可，不拆分
   build: { chunkSizeWarningLimit: 1700 },
   server: {
-    // 开发时 /colyseus 转给本机的联机服务器（npm run server），与线上 nginx 的配置一致
+    // 开发时 /colyseus 转给本机的联机服务器（npm run server，端口同样读 PORT），与线上 nginx 的配置一致
     proxy: {
-      '/colyseus': { target: 'http://127.0.0.1:2567', ws: true, rewrite: (p) => p.replace(/^\/colyseus/, '') },
+      '/colyseus': { target: `http://127.0.0.1:${process.env.PORT ?? 2567}`, ws: true, rewrite: (p) => p.replace(/^\/colyseus/, '') },
     },
   },
   plugins: [

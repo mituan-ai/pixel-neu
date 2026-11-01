@@ -34,15 +34,28 @@ describe('地图', () => {
     }
   });
 
-  it('三栋核心建筑都在，并带 OSM 来源', () => {
+  it('核心建筑都在，并带 OSM 来源', () => {
     const names = ofType('building').map((b) => b.name);
     for (const n of ['信息学馆', '宁恩承图书馆']) expect(names).toContain(n);
     for (const b of ofType('building')) expect(b.properties?.some((p) => p.name === 'osm')).toBe(true);
   });
 
+  it('信息学馆和图书馆的楼基落在北门—鼎的中轴上', () => {
+    // 卫星图斜拍，OSM 轮廓常偏在楼顶上（见 tools/survey.ts 的 buildings）；没校正时楼会偏西 4–7 m
+    const axis = ofType('poi').find((p) => p.name === '北门')!.x;
+    for (const name of ['信息学馆', '宁恩承图书馆']) {
+      const b = ofType('building').find((o) => o.name === name)!;
+      const rows = String(b.properties!.find((p) => p.name === 'mask')!.value).split('/');
+      const cols = rows.flatMap((r) => [...r].flatMap((ch, c) => (ch !== '0' ? [c] : [])));
+      const centre = b.x + ((Math.min(...cols) + Math.max(...cols) + 1) / 2) * TILE;
+      expect(Math.abs(centre - axis), name).toBeLessThan(TILE);
+    }
+  });
+
   it('建筑脚下不可走', () => {
+    // 信息学馆是朝南开口的 U 形，最北一排是主楼
     const info = ofType('building').find((b) => b.name === '信息学馆')!;
-    expect(walk.footBlocked(info.x + info.width / 2, info.y + info.height - TILE)).toBe(true);
+    expect(walk.footBlocked(info.x + info.width / 2, info.y + 2 * TILE)).toBe(true);
   });
 });
 
@@ -50,7 +63,7 @@ describe('寻路', () => {
   it('终点在障碍里时停在最近的空地', () => {
     const info = ofType('building').find((b) => b.name === '信息学馆')!;
     const [spawn] = ofType('spawn');
-    const route = walk.path(spawn.x, spawn.y, info.x + info.width / 2, info.y + info.height - 2);
+    const route = walk.path(spawn.x, spawn.y, info.x + info.width / 2, info.y + 2);
     expect(route.length).toBeGreaterThan(0);
     const end = route[route.length - 1];
     expect(walk.footBlocked(end.x, end.y)).toBe(false);

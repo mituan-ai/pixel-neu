@@ -1,17 +1,14 @@
-// 把 data/osm.json 栅格化成 Tiled 地图 assets/map.json。用法：npm run map（之后跑 npm run art 重画建筑）
+// 生成 Tiled 地图 assets/map.json。用法：npm run map（之后跑 npm run art 重画建筑）
 //
-// 坐标处理（详见 docs/design.md）：
-// 1. 经纬度 → 以 LAT0/LON0 为原点的米坐标（x 向东，y 向南）
-// 2. 整片校园的路网约有 3.85° 偏转，先转正，让主要楼和路对齐网格
-// 3. 再整体旋转 180°：屏幕上方 = 地理南。从北门进校、往屏幕上方走，正好看到信息学馆朝北的正立面
-// 4. 1 格 = 2 米，全图同一比例，不压缩距离
-//
-// 布局只来自 OSM；OSM 没画的细节（广场铺装、草坪、树、路灯）在 DESIGN 段补充，每项都写了依据。
+// 世界坐标见 geo.ts：上北，单位米。这个文件里的坐标一律先经 cell() 换成格（减去地图西北角，再除以 METERS_PER_TILE）。
+// 地面（路、铺装、林地、草坪、停车场）全部来自 data/survey.json（从卫星图 S7 描的）；没描过的地方画成不可进入的校外色块。
+// 楼的占地、纪念物和北门的位置来自 OSM（S1）。只有林地里的树是按冠幅铺满的（DESIGN），因为单棵树的位置看不清。
 import { readFileSync, writeFileSync } from 'node:fs';
-import { LAYER, METERS_PER_TILE as MPT, TILE, type TiledLayer, type TiledObject, type TiledProperty } from '../shared/world.ts';
-import { BUILDING, GROUND, TILESET } from './tiles.ts';
+import { LAYER, METERS_PER_TILE as M, TILE, type TiledLayer, type TiledObject, type TiledProperty } from '../shared/world.ts';
+import { EXTENT, MAP_W as W, MAP_H as H, toWorld, type P } from './geo.ts';
+import { loadSurvey } from './survey.ts';
+import { BUILDING, GROUND, TILESET, TREES } from './tiles.ts';
 
-type P = [number, number];
 interface El {
   type: 'node' | 'way' | 'relation';
   id: number;
@@ -21,26 +18,12 @@ interface El {
   geometry?: { lat: number; lon: number }[];
 }
 const osm: { elements: El[] } = JSON.parse(readFileSync(new URL('../data/osm.json', import.meta.url), 'utf8'));
+const survey = loadSurvey();
 
-// ---------- 坐标 ----------
-const LAT0 = 41.7655, LON0 = 123.4135;
-const M_LAT = 111320, M_LON = 111320 * Math.cos((LAT0 * Math.PI) / 180);
-/** 校园路网偏转角：由信息学馆北墙（OSM way 87664797）量得 3.84°，图书馆北墙 3.92° */
-const ROT = (3.85 * Math.PI) / 180;
-/** 地图范围（转正后的米坐标）：东西各到两侧楼群中部，北到北门外约 30 米，南到汉卿北路以南的鼎 */
-const X_W = -136, X_E = 136, Y_N = -282, Y_S = 206;
-const W = (X_E - X_W) / MPT, H = (Y_S - Y_N) / MPT;
-
-const cos = Math.cos(ROT), sin = Math.sin(ROT);
-/** 本地米坐标（未转正）→ 格坐标（浮点，屏幕方向） */
-function T([x, y]: P): P {
-  const xr = x * cos + y * sin, yr = -x * sin + y * cos;
-  return [(X_E - xr) / MPT, (Y_S - yr) / MPT];
-}
-const local = (lat: number, lon: number): P => [(lon - LON0) * M_LON, (LAT0 - lat) * M_LAT];
-const geomT = (e: El): P[] => (e.geometry ?? []).map((g) => T(local(g.lat, g.lon)));
-const nodeLocal = (e: El): P => local(e.lat!, e.lon!);
-
+/** 世界米坐标 → 格坐标 */
+const cell = ([x, y]: P): P => [(x - EXTENT.x0) / M, (y - EXTENT.y0) / M];
+const geom = (e: El): P[] => (e.geometry ?? []).map((g) => cell(toWorld(g.lat, g.lon)));
+const nodeAt = (e: El): P => cell(toWorld(e.lat!, e.lon!));
 const byId = (id: number) => {
   const e = osm.elements.find((x) => x.id === id);
   if (!e) throw new Error(`OSM 里找不到 ${id}，可能被删改了，先核对 data/osm.json`);
@@ -52,7 +35,6 @@ const byName = (name: string) => {
   return e;
 };
 
-// ---------- 几何工具（格坐标） ----------
 function inPoly(p: P, poly: P[]): boolean {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -61,97 +43,63 @@ function inPoly(p: P, poly: P[]): boolean {
   }
   return inside;
 }
-function distSeg(p: P, a: P, b: P): number {
-  const dx = b[0] - a[0], dy = b[1] - a[1];
-  const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)));
-  return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
-}
-const distLine = (p: P, line: P[]) => Math.min(...line.slice(1).map((b, i) => distSeg(p, line[i], b)));
 const dist = (a: P, b: P) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 const lerp = (a: P, b: P, t: number): P => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 
 // ---------- 网格 ----------
 type Kind = keyof typeof GROUND;
-const kind: Kind[] = new Array(W * H);
-const inside = new Uint8Array(W * H);
+const kind: Kind[] = new Array(W * H).fill('outside');
 const solid = new Uint8Array(W * H);
 const at = (c: number, r: number) => r * W + c;
-const center = (c: number, r: number): P => [c + 0.5, r + 0.5];
-function each(fn: (c: number, r: number, p: P, i: number) => void): void {
-  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) fn(c, r, center(c, r), at(c, r));
-}
 const inGrid = (c: number, r: number) => c >= 0 && r >= 0 && c < W && r < H;
+const kindAt = (c: number, r: number): Kind | null => (inGrid(c, r) ? kind[at(c, r)] : null);
 const hash = (c: number, r: number) => ((c * 73856093) ^ (r * 19349663)) >>> 0;
+function each(fn: (c: number, r: number, p: P, i: number) => void): void {
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) fn(c, r, [c + 0.5, r + 0.5], at(c, r));
+}
+/** 只扫多边形外接矩形里的格子 */
+function fill(poly: P[], fn: (i: number, c: number, r: number) => void): void {
+  const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
+  const c0 = Math.max(0, Math.floor(Math.min(...xs))), c1 = Math.min(W - 1, Math.ceil(Math.max(...xs)));
+  const r0 = Math.max(0, Math.floor(Math.min(...ys))), r1 = Math.min(H - 1, Math.ceil(Math.max(...ys)));
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) if (inPoly([c + 0.5, r + 0.5], poly)) fn(at(c, r), c, r);
+}
 
-// 1. 校界：OSM 上校园范围的那条墙（amenity=university + barrier=wall）
-const campus = geomT(byId(53573481));
-const gateLocal = nodeLocal(byName('北门'));
-const gate = T(gateLocal);
-/** 北门外可以走动的门前广场（校外其余区域不可进入） */
-const apron = (p: P) => !inPoly(p, campus) && Math.abs(p[0] - gate[0]) < 22 / MPT && p[1] > gate[1] - 1 && p[1] < H;
-const park = osm.elements.filter((e) => e.tags.leisure === 'park').map(geomT);
-each((_c, _r, p, i) => {
-  inside[i] = inPoly(p, campus) ? 1 : 0;
-  kind[i] = inside[i] ? 'grass' : park.some((g) => inPoly(p, g)) ? 'park' : 'outside';
-  if (apron(p)) kind[i] = 'paving';
-});
-
-// 2. 道路：OSM 中心线 + 按道路等级给宽度（米）
-const ROAD_W: Record<string, number> = { residential: 8, unclassified: 6, service: 4 };
-const roads = osm.elements.filter((e) => e.type === 'way' && ROAD_W[e.tags.highway]);
-const footways = osm.elements.filter((e) => e.type === 'way' && ['footway', 'steps', 'path', 'pedestrian'].includes(e.tags.highway));
-const roadLines = roads.map((e) => ({ line: geomT(e), half: ROAD_W[e.tags.highway] / 2 / MPT, main: e.tags.highway === 'residential' }));
-
-// 3. 人行道（DESIGN）：校内主干道两侧各 3 米铺装。依据：校园照片里的主干道两侧都有铺装人行道和行道树
-const SIDEWALK = 3 / MPT;
-each((_c, _r, p, i) => {
-  if (!inside[i]) return;
-  for (const r of roadLines) if (r.main && distLine(p, r.line) < r.half + SIDEWALK) kind[i] = 'sidewalk';
-});
-
-// 4. 广场与草坪（DESIGN）。坐标是未转正的本地米坐标，取自 OSM 顶点（注释里写了来源）
-const L = (pts: P[]) => pts.map(T);
-/** Y 形路口围出的三角地：路口 87664806 末端、知行路与自强路的折点。依据：照片里校训石背后是草坪和高大针叶树 */
-const triangle = L([[9.1, -192.4], [-74.6, -122.9], [80.4, -110.4]]);
-/** 信息学馆北面的前庭：三角地底边到信息学馆北墙，两侧到道路 */
-const forecourt = L([[-74.6, -122.9], [80.4, -110.4], [75.5, -45], [-80.5, -55]]);
-/** 信息学馆与图书馆之间、图书馆四周的广场：两侧到道路，南到图书馆南墙外 8 米。依据：校园平面图上图书馆四周为铺装 */
-const core = L([[-80.5, -55], [75.5, -45], [64.7, 133], [-88.9, 128]]);
-/** 信息学馆南侧院落中的半圆草坪。依据：校园平面图上院落里画有半圆形绿地 */
-const courtLawn = { c: T([-6, 8]), r: 18 / MPT };
-each((_c, _r, p, i) => {
-  if (!inside[i]) return;
-  if (inPoly(p, forecourt) || inPoly(p, core)) kind[i] = 'paving';
-  if (inPoly(p, triangle)) kind[i] = 'grass';
-  // 半圆：只取圆心北侧（转正后 y 更小 = 屏幕更下方）
-  if (dist(p, courtLawn.c) < courtLawn.r && p[1] > courtLawn.c[1]) kind[i] = 'grass';
-});
-
-// 5. 步行道（OSM footway），铺装 3 米
-each((_c, _r, p, i) => {
-  for (const f of footways) {
-    const line = geomT(f);
-    if (line.length > 1 && distLine(p, line) < 1.5 / MPT) {
-      if (!inside[i] && !apron(p)) continue;
-      kind[i] = f.tags.footway === 'crossing' ? 'zebra' : 'paving';
+// 1. 地面：按 survey.json 的顺序铺，后写的盖住先写的
+const AREA_KIND: Record<string, Kind> = { asphalt: 'asphalt', paving: 'paving', parking: 'parking', grass: 'grass', wood: 'wood', hedge: 'hedge', planter: 'flower', water: 'water', track: 'track', pitch: 'pitch', court: 'court' };
+for (const a of survey.areas) fill(a.poly.map(cell), (i) => (kind[i] = AREA_KIND[a.kind]));
+// 斜边换算成格子后，相邻两块之间会漏出校外格。从地图边上连不出去的校外格都是漏缝，由外向内用邻格补上
+{
+  const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const open = new Uint8Array(W * H);
+  const queue: number[] = [];
+  each((c, r, _p, i) => {
+    if (kind[i] === 'outside' && (c === 0 || r === 0 || c === W - 1 || r === H - 1)) (open[i] = 1), queue.push(i);
+  });
+  for (let head = 0; head < queue.length; head++) {
+    const c = queue[head] % W, r = (queue[head] / W) | 0;
+    for (const [dc, dr] of DIRS) {
+      const j = at(c + dc, r + dr);
+      if (inGrid(c + dc, r + dr) && !open[j] && kind[j] === 'outside') (open[j] = 1), queue.push(j);
     }
   }
-});
-
-// 6. 车行道
-each((_c, _r, p, i) => {
-  for (const r of roadLines) if (distLine(p, r.line) < r.half) kind[i] = kind[i] === 'zebra' ? 'zebra' : 'asphalt';
-});
-
-// 7. 水面
-for (const e of osm.elements.filter((e) => e.type === 'way' && e.tags.natural === 'water')) {
-  const g = geomT(e);
-  each((_c, _r, p, i) => {
-    if (inPoly(p, g)) kind[i] = 'water';
-  });
+  for (let changed = true; changed; ) {
+    changed = false;
+    each((c, r, _p, i) => {
+      if (kind[i] !== 'outside' || open[i]) return;
+      const nb = DIRS.map(([dc, dr]) => kindAt(c + dc, r + dr)).find((k) => k && k !== 'outside');
+      if (nb) (kind[i] = nb), (changed = true);
+    });
+  }
 }
 
-// 8. 校界墙：沿墙线逐格画（四连通，不会漏缝），北门两根大石柱之间与两侧人行门留空
+// 2. 校界墙（OSM 上的校园范围线），北门大门与两侧人行门留空
+const campus = geom(byId(53573481));
+const gate = nodeAt(byName('北门'));
+const GATE_HALF = 15 / M;
+/** 校界上的豁口：北门，加上 survey.json 记下的其他校门 */
+const openings = [{ at: gate, half: GATE_HALF }, ...survey.gates.map((g) => ({ at: cell(g.at), half: g.width / 2 / M }))];
+const inOpening = (q: P) => openings.some((o) => dist(q, o.at) < o.half);
 function supercover(a: P, b: P, fn: (c: number, r: number) => void): void {
   const n = Math.ceil(Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])) * 4) + 1;
   let prev: P | null = null;
@@ -163,12 +111,32 @@ function supercover(a: P, b: P, fn: (c: number, r: number) => void): void {
     prev = cell;
   }
 }
-const GATE_HALF = 13 / MPT;
+// 墙所在的格子照常挡路，地面按原来的画；墙本身是沿范围线的铁栅栏（据 R-gate-03 照片），由客户端按折线画，斜着走也不会成台阶
+const wallUnder = new Map<number, Kind>();
 for (let k = 1; k < campus.length; k++)
   supercover(campus[k - 1], campus[k], (c, r) => {
-    if (!inGrid(c, r) || dist(center(c, r), gate) < GATE_HALF) return;
-    kind[at(c, r)] = 'wall';
+    if (inGrid(c, r) && kind[at(c, r)] !== 'outside' && !inOpening([c + 0.5, r + 0.5])) {
+      if (kind[at(c, r)] !== 'wall') wallUnder.set(at(c, r), kind[at(c, r)]);
+      kind[at(c, r)] = 'wall';
+    }
   });
+/** 栅栏折线：范围线上落在描过地面、又不在大门口的连续几段 */
+const fences: P[][] = [];
+{
+  let run: P[] = [];
+  const flush = () => (run.length > 1 && fences.push(run), (run = []));
+  for (let k = 1; k < campus.length; k++) {
+    const [a, b] = [campus[k - 1], campus[k]];
+    const n = Math.max(1, Math.ceil(dist(a, b) * 2));
+    for (let j = k === 1 ? 0 : 1; j <= n; j++) {
+      const q = lerp(a, b, j / n);
+      const ok = inGrid(Math.floor(q[0]), Math.floor(q[1])) && kind[at(Math.floor(q[0]), Math.floor(q[1]))] === 'wall' && !inOpening(q);
+      if (ok) run.push(q);
+      else flush();
+    }
+  }
+  flush();
+}
 
 // ---------- 建筑 ----------
 const levelPx = (storeys: number) => storeys * BUILDING.storey + BUILDING.plinth + BUILDING.parapet;
@@ -181,32 +149,42 @@ interface Building {
   levels: number[];
   extraTop: number;
 }
-/** 只给核实过名字的楼标名字；OSM 与校园平面图对不上的楼先不标（见 docs/design.md） */
+/** 只给核实过名字的楼标名字 */
 const NAMED: Record<number, { name: string; style: Building['style'] }> = {
   87664797: { name: '信息学馆', style: 'info' },
   87664798: { name: '宁恩承图书馆', style: 'library' },
-  514995514: { name: '双馨苑', style: 'plain' },
 };
 const buildings: Building[] = [];
-for (const e of osm.elements.filter((e) => e.type === 'way' && e.tags.building && e.geometry)) {
-  const poly = geomT(e);
+// OSM 的楼，加上 survey.json 里补描的楼（没有 OSM 编号，用负数）
+const footprints = [
+  ...osm.elements.filter((e) => e.type === 'way' && e.tags.building && e.geometry).map((e) => ({ id: e.id, poly: geom(e), levels: Number(e.tags['building:levels']) || 0 })),
+  ...survey.newBuildings.map((b, k) => ({ id: -(k + 1), poly: b.poly.map(cell), levels: b.storeys })),
+];
+for (const e of footprints) {
+  // OSM 轮廓贴的是斜拍的楼顶，survey.json 里记了平移到楼基的量
+  const { shift = [0, 0], lean = [0, 0], storeys = e.levels || 4, drop } = survey.buildings[e.id] ?? {};
+  if (drop) continue;
+  const poly = e.poly.map(([x, y]): P => [x + shift[0] / M, y + shift[1] / M]);
+  // 只画已经描过地面的楼：楼基至少一半的格子在描过的范围里；伸出地图边的部分裁掉
+  let inside = 0, total = 0;
+  fill(poly, (i) => (total++, kind[i] !== 'outside' && inside++));
+  if (!total || inside * 2 < total) continue;
   const meta = NAMED[e.id] ?? { name: '', style: 'plain' as const };
-  const b: Building = { id: e.id, name: meta.name, style: meta.style, cells: new Map(), levels: [0, levelPx(4)], extraTop: 0 };
-  // 信息学馆：两翼 5 层，中段 7 层，中央塔楼 10 层，塔顶再加亭子和旗杆（据北门方向照片目测，层数按像素尺度压缩）
-  const axis = -5.4; // 北翼东西中点（本地米）
-  const infoLevel = (lx: number, ly: number) => (Math.abs(lx - axis) <= 7 && ly < -42 ? 3 : Math.abs(lx - axis) <= 16 && ly < -25 ? 2 : 1);
-  if (meta.style === 'info') {
-    b.levels = [0, levelPx(5), levelPx(7), levelPx(10)];
-    b.extraTop = 40;
-  }
-  // 图书馆与其他楼：统一 4 层（图书馆据照片为 4 层）
-  each((c, r, p) => {
-    if (!inPoly(p, poly)) return;
-    // 反算本地米坐标，给分段高度用
-    const xr = X_E - p[0] * MPT, yr = Y_S - p[1] * MPT;
-    const lx = xr * cos - yr * sin, ly = xr * sin + yr * cos;
-    b.cells.set(at(c, r), meta.style === 'info' ? infoLevel(lx, ly) : 1);
+  // 图书馆 4 层（据照片）；其他楼按 survey.json 或 OSM 的层数
+  const b: Building = { id: e.id, name: meta.name, style: meta.style, cells: new Map(), levels: [0, levelPx(storeys)], extraTop: 0 };
+  // 楼基 = 轮廓里往楼顶方向挪 lean 后仍在轮廓内的格子
+  fill(poly, (i, c, r) => {
+    if (inPoly([c + 0.5 + lean[0] / M, r + 0.5 + lean[1] / M], poly)) b.cells.set(i, 1);
   });
+  // 信息学馆（据航拍 R-info-06-02、正面照 R-info-01）：两翼 5 层；中轴上的中央楼 7 层，宽约 26 m、
+  // 从北墙往南约 19.5 m（宽深据卫星图 S7 上中央楼的屋面）；楼顶再有退台、小塔和旗杆
+  if (meta.style === 'info') {
+    b.levels = [0, levelPx(5), levelPx(7)];
+    b.extraTop = 4 * BUILDING.storey;
+    const r0 = Math.min(...[...b.cells.keys()].map((i) => Math.floor(i / W)));
+    for (const i of b.cells.keys())
+      if (Math.abs((i % W) + 0.5 - gate[0]) <= 13 / M && Math.floor(i / W) < r0 + 19.5 / M) b.cells.set(i, 2);
+  }
   if (b.cells.size) buildings.push(b);
 }
 for (const b of buildings) for (const i of b.cells.keys()) kind[i] = 'floor';
@@ -219,168 +197,171 @@ const props = (o: Record<string, string | number | boolean>): TiledProperty[] =>
 function point(type: string, name: string, p: P, extra: Record<string, string | number | boolean> = {}): void {
   objects.push({ id: nextId++, name, type, x: Math.round(p[0] * TILE), y: Math.round(p[1] * TILE), width: 0, height: 0, point: true, properties: props(extra) });
 }
-/** 物件脚下的格子：实心物件挡路，花坛也挡。p 是贴图的落脚点（底边中点），挡住脚所在那一排往上 hTiles 排、左右居中 wTiles 列 */
-function block(p: P, wTiles = 1, hTiles = 1): void {
-  const c0 = Math.round(p[0] - wTiles / 2), r0 = Math.floor(p[1] - 0.01) - hTiles + 1;
-  for (let r = r0; r < r0 + hTiles; r++) for (let c = c0; c < c0 + wTiles; c++) if (inGrid(c, r)) solid[at(c, r)] = 1;
+/** 物件挡路：以 p（格坐标，物件占地中心）为中心、东西 wm 米、南北 dm 米的矩形覆盖到的格子 */
+function block(p: P, wm: number, dm: number): void {
+  const c0 = Math.floor(p[0] - wm / M / 2 + 0.25), c1 = Math.ceil(p[0] + wm / M / 2 - 0.25);
+  const r0 = Math.floor(p[1] - dm / M / 2 + 0.25), r1 = Math.ceil(p[1] + dm / M / 2 - 0.25);
+  for (let r = r0; r < Math.max(r1, r0 + 1); r++) for (let c = c0; c < Math.max(c1, c0 + 1); c++) if (inGrid(c, r)) solid[at(c, r)] = 1;
 }
-const free = (p: P) => {
-  const c = Math.floor(p[0]), r = Math.floor(p[1]);
-  return inGrid(c, r) && inside[at(c, r)] && !solid[at(c, r)] && ['grass', 'paving', 'sidewalk'].includes(kind[at(c, r)]);
-};
-/** 草坪里的树：只种在草地上，且不贴着步道，免得挡路 */
-const green = (p: P) => {
-  const c = Math.floor(p[0]), r = Math.floor(p[1]);
-  return free(p) && kind[at(c, r)] === 'grass' && [[1, 0], [-1, 0], [0, 1], [0, -1]].every(([dc, dr]) => !inGrid(c + dc, r + dr) || kind[at(c + dc, r + dr)] !== 'paving');
-};
-function prop(sprite: string, p: P, solidW = 0, solidH = 1): boolean {
-  if (!free(p) || (sprite === 'pine' && !green(p))) return false;
-  point('prop', sprite, p, { sprite });
-  if (solidW) block(p, solidW, solidH);
-  return true;
+/** 放一个物件：位置是占地中心；rot 是相对美术朝向（车头朝北）顺时针转了几个 90° */
+function placeProp(sprite: string, p: P, wm: number, dm: number, rot = 0): void {
+  point('prop', sprite, p, rot ? { sprite, rot } : { sprite });
+  if (rot % 2) [wm, dm] = [dm, wm];
+  block(p, wm, dm);
 }
 
-// 北门：四根石柱。大柱在车道两侧，小柱在两侧人行门外；校名牌在西侧大柱上（据校门照片：从校外看在右手）
-const along = (d: number): P => T([gateLocal[0] + d, gateLocal[1] + 1]);
-for (const [d, sprite] of [[-6, 'pylon-plaque'], [6, 'pylon'], [-12, 'pylon-small'], [12, 'pylon-small']] as const) {
-  const p = along(d);
-  point('prop', sprite, p, { sprite });
-  block(p, 1, 1);
+// 校界栅栏：折线，坐标按像素
+for (const f of fences)
+  objects.push({
+    id: nextId++, name: '', type: 'fence', x: Math.round(f[0][0] * TILE), y: Math.round(f[0][1] * TILE), width: 0, height: 0,
+    polyline: f.map((q) => ({ x: Math.round((q[0] - f[0][0]) * TILE), y: Math.round((q[1] - f[0][1]) * TILE) })),
+  });
+
+/** 楼基的外接框（格）和东西中点 */
+function baseBox(name: string): { x0: number; x1: number; y0: number; y1: number; cx: number } {
+  const cells = [...buildings.find((b) => b.name === name)!.cells.keys()];
+  const xs = cells.map((i) => i % W), ys = cells.map((i) => Math.floor(i / W));
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs) + 1, Math.min(...ys), Math.max(...ys) + 1];
+  return { x0, x1, y0, y1, cx: (x0 + x1) / 2 };
 }
 
-// OSM 标注的纪念物与雕塑，位置照搬
+// 北门（据 R-gate-03 照片、R-gate-80 卫星图）：自西向东小柱、大柱、大柱、小柱，中心距北门点 -14.5、-8.5、+8、+14 m；
+// 校名牌在西侧大柱北面。大柱与小柱之间是铁栅栏，车道中间一座岗亭
+for (const [d, sprite, w, dd] of [[-14.5, 'pylon-small', 2.5, 2], [-8.5, 'pylon-west', 4, 3], [8, 'pylon-east', 4, 3], [14, 'pylon-small', 2.5, 2]] as const)
+  placeProp(sprite, [gate[0] + d / M, gate[1]], w, dd);
+for (const d of [-11.5, 11]) placeProp('fence-gate', [gate[0] + d / M, gate[1]], 2.75, 0.2);
+placeProp('booth', [gate[0], gate[1]], 1.6, 1.6);
+
+// 图书馆南入口台阶（据 R-library-11），平铺在地上，可以走
+const library = baseBox('宁恩承图书馆');
+point('prop', 'library-steps', [library.cx, library.y1 + 2 / M], { sprite: 'library-steps', flat: true });
+
+// OSM 标注的纪念物与雕塑，位置照搬；只放在描过地面的范围里。占地据 docs/refs（校训石据揭幕报道，其余为照片估计）
 const MONUMENTS: [string, string, number, number][] = [
-  ['校训石', 'motto-stone', 3, 1],
-  ['大书', 'big-book', 2, 1],
-  ['能量球', 'energy-ball', 1, 1],
-  ['宁恩承先生', 'bust', 1, 1],
-  ['张捷迁校友', 'bust', 1, 1],
-  ['鼎', 'ding', 2, 1],
+  ['校训石', 'motto-stone', 7.2, 0.6],
+  ['大书', 'big-book', 2, 1.5],
+  ['宁恩承先生', 'bust-ning', 3, 2],
+  ['张捷迁校友', 'bust-zhang', 3, 2],
+  ['鼎', 'ding', 4, 3],
 ];
 const monumentAt: Record<string, P> = {};
-for (const [name, sprite, w, h] of MONUMENTS) {
-  const p = T(nodeLocal(byName(name)));
+for (const [name, sprite, w, d] of MONUMENTS) {
+  const p = nodeAt(byName(name));
+  if (kind[at(Math.floor(p[0]), Math.floor(p[1]))] === 'outside') continue;
   monumentAt[name] = p;
-  // 纪念物脚下铺一小块圆形铺装
-  each((_c, _r, q, i) => {
-    if (inside[i] && dist(q, p) < (name === '校训石' ? 5 : 3.2) / MPT && kind[i] !== 'asphalt') kind[i] = 'paving';
-  });
-  point('prop', sprite, p, { sprite });
-  block(p, w, h);
-}
-// 校训石底座两侧的红花（DESIGN，依据：校训石照片中底座旁有红色花坛）
-for (const dx of [-3, 3]) {
-  const p: P = [monumentAt['校训石'][0] + dx, monumentAt['校训石'][1]];
-  const c = Math.floor(p[0]), r = Math.floor(p[1]);
-  if (inGrid(c, r)) kind[at(c, r)] = 'flower';
+  placeProp(sprite, p, w, d);
 }
 
-// 树（DESIGN）：前庭与三角地两侧是高大针叶树（据北门、校训石方向的照片），其余主干道人行道上是阔叶行道树
-const westRoad = geomT(byName('知行路')), eastRoad = geomT(byName('自强路'));
-function rowAlong(line: P[], offset: number, step: number, sprite: string, from: number, to: number): void {
-  // 沿折线每隔 step 格放一棵，offset 为向线左侧（正）或右侧（负）的偏移格数
-  let acc = 0;
-  for (let k = 1; k < line.length; k++) {
-    const a = line[k - 1], b = line[k];
-    const len = dist(a, b);
-    const n: P = [-(b[1] - a[1]) / len, (b[0] - a[0]) / len];
-    for (let s = (step - acc) % step; s < len; s += step) {
-      const q = lerp(a, b, s / len);
-      if (q[1] < from || q[1] > to) continue;
-      prop(sprite, [q[0] + n[0] * offset, q[1] + n[1] * offset], 1, 1);
+// 中轴两侧的行道树：成排的高柱状针叶树（据 R-gate-03、R-info-01 照片），种在路缘外 2.5 m 的林地里，每 5 m 一棵。
+// 中轴两侧的路灯（据同两张照片）：沿进校路和十字广场两边，每 20 m 一盏；具体间距待核实
+const reserved = new Uint8Array(W * H);
+{
+  const rows: [number, number, number][] = [
+    [123.5, 34, 76], [137.5, 34, 76], // 进校路
+    [116.5, 115, 150], [143.5, 115, 150], // 十字广场北段
+    [115.5, 170, 204], [144.5, 170, 204], // 十字广场南段
+  ];
+  let k = 0;
+  for (const [x, y0, y1] of rows)
+    for (let y = y0; y <= y1; y += 5) {
+      const p = cell([x, y]);
+      if (kindAt(Math.floor(p[0]), Math.floor(p[1])) !== 'wood') continue;
+      placeProp(`conifer-column-${(k++ % 3) + 1}`, p, 1, 1);
+      for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) if (inGrid(Math.floor(p[0]) + dc, Math.floor(p[1]) + dr)) reserved[at(Math.floor(p[0]) + dc, Math.floor(p[1]) + dr)] = 1;
     }
-    acc = (acc + len) % step;
-  }
+  const lamps: [number, number, number][] = [[125.3, 40, 76], [135.7, 40, 76], [119.6, 115, 205], [140.4, 115, 205]];
+  for (const [x, y0, y1] of lamps) for (let y = y0; y <= y1; y += 20) placeProp('lamp', cell([x, y]), 0.6, 0.6);
 }
-const yOf = (lx: number, ly: number) => T([lx, ly])[1];
-const forecourtRows: [number, number] = [yOf(0, -45), yOf(0, -118)];
-/** 针叶树种在人行道外侧，行道树种在人行道靠外一边（格，离道路中心线） */
-const pineOff = 4 / MPT + SIDEWALK + 1.2;
-const treeOff = 4 / MPT + SIDEWALK - 0.4;
-for (const road of [westRoad, eastRoad])
-  for (const side of [1, -1]) {
-    rowAlong(road, side * pineOff, 3.5, 'pine', forecourtRows[0], yOf(0, -190));
-    rowAlong(road, side * treeOff, 4, 'tree', 0, forecourtRows[0]);
-  }
-const hanqing = geomT(byName('汉卿北路'));
-for (const side of [1, -1]) rowAlong(hanqing, side * treeOff, 4, 'tree', 0, H);
-// 三角地草坪里的针叶树：沿两条斜边内侧
-const [tJ, tW, tE] = triangle;
-for (const [a, b] of [[tJ, tW], [tJ, tE]] as const)
-  for (let t = 0.12; t < 0.95; t += 0.11) {
-    const q = lerp(a, b, t);
-    const toCenter: P = [(tW[0] + tE[0] + tJ[0]) / 3 - q[0], (tW[1] + tE[1] + tJ[1]) / 3 - q[1]];
-    const len = Math.hypot(...toCenter);
-    prop('pine', [q[0] + (toCenter[0] / len) * 4.5, q[1] + (toCenter[1] / len) * 4.5], 1, 1);
-  }
+const nearAxis = (c: number, r: number) => reserved[at(c, r)] === 1;
 
-// 路灯与长椅（DESIGN）：前庭两侧路灯；大书广场、图书馆南侧草地、院落四周放长椅，作为停留点
-const lampLine = (a: P, b: P, n: number) => {
-  for (let k = 0; k <= n; k++) prop('lamp', lerp(a, b, k / n), 0);
-};
-lampLine(T([-60, -112]), T([-56, -66]), 4);
-lampLine(T([66, -102]), T([46, -60]), 4);
-const book = monumentAt['大书'];
-for (const [dx, dy] of [[-6, -2], [6, -2], [-6, 2], [6, 2]]) prop('bench', [book[0] + dx, book[1] + dy], 0);
-for (const name of ['宁恩承先生', '张捷迁校友']) {
-  const p = monumentAt[name];
-  prop('bench', [p[0] - 3, p[1]], 0);
-  prop('bench', [p[0] + 3, p[1]], 0);
-}
-// 图书馆四周的树池（依据：校园平面图上图书馆外圈画有一排小方块）。南侧被屋顶挡住，只放北、东、西三面
-const lib = buildings.find((b) => b.style === 'library')!;
+// 停车场里的车（据卫星图 S7：信息学馆院内和图书馆南面的停车场都停着车，车身南北向）。
+// 车位深 6 m（3 格），约一半车位有车，按格子哈希挑，每次生成一样
 {
-  let minC = W, maxC = 0, minR = H, maxR = 0;
-  for (const i of lib.cells.keys()) {
-    const c = i % W, r = (i / W) | 0;
-    minC = Math.min(minC, c), maxC = Math.max(maxC, c), minR = Math.min(minR, r), maxR = Math.max(maxR, r);
-  }
-  for (let c = minC; c <= maxC; c += 5) prop('tree-pit', [c + 0.5, maxR + 4], 1, 1);
-  for (let r = minR + 2; r <= maxR; r += 5) {
-    prop('tree-pit', [minC - 3.5, r + 1], 1, 1);
-    prop('tree-pit', [maxC + 4.5, r + 1], 1, 1);
-  }
-}
-
-// 地面的大尺度变化（DESIGN，纯视觉）：广场每 8 格一道深色铺装带，以信息学馆中轴对齐；草地有成片的深浅
-{
-  const axisC = Math.round(T([-5.4, 0])[0]);
-  const smooth = (c: number, r: number) => {
-    const n = (x: number, y: number) => (hash(x, y) % 1000) / 1000;
-    const x = c / 7, y = r / 7, xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi;
-    const a = n(xi, yi), b = n(xi + 1, yi), c2 = n(xi, yi + 1), d = n(xi + 1, yi + 1);
-    return a + (b - a) * fx + (c2 - a) * fy + (a - b - c2 + d) * fx * fy;
-  };
-  each((c, r, p, i) => {
-    if (kind[i] === 'paving' && inside[i] && (inPoly(p, forecourt) || inPoly(p, core)) && ((c - axisC) % 8 === 0 || r % 8 === 0)) kind[i] = 'band';
-    if (kind[i] === 'grass' && smooth(c, r) > 0.62) kind[i] = 'grassDark';
-    if (kind[i] === 'asphalt' && !inside[i] && !apron(p)) kind[i] = 'outsideRoad';
+  const CARS = ['car-0', 'car-1', 'car-2', 'car-3', 'car-4'];
+  each((c, r, _p, i) => {
+    if (kind[i] !== 'parking' || r % 3 || solid[i] || hash(c, r) % 100 >= 45) return;
+    if (![1, 2].every((k) => kindAt(c, r + k) === 'parking')) return;
+    placeProp(CARS[hash(r, c) % CARS.length], [c + 0.5, r + 1.5], 1.8, 4.5, hash(c + 7, r) % 2 ? 0 : 2);
   });
+  // 垂直车位排（survey.json 的 stalls，据卫星图 S7）：每个车位一张地面标线，约八成有车，车头大多朝底线
+  const NOSE = { N: 0, E: 1, S: 2, W: 3 } as const;
+  for (const { at: [x, y], n, back } of survey.stalls)
+    for (let k = 0; k < n; k++) {
+      const along = 1.25 + k * 2.5;
+      const centre: P = back === 'W' ? [x + 2.5, y + along] : back === 'E' ? [x - 2.5, y + along] : back === 'N' ? [x + along, y + 2.5] : [x + along, y - 2.5];
+      const rot = (NOSE[back] + 1) % 4; // 标线美术的底线在西
+      point('prop', 'stall', cell(centre), { sprite: 'stall', flat: true, ...(rot ? { rot } : {}) });
+      const h = hash(Math.round(centre[0] * 10), Math.round(centre[1] * 10));
+      if (h % 100 >= 80) continue;
+      placeProp(CARS[h % CARS.length], cell(centre), 1.8, 4.5, h % 10 < 3 ? (NOSE[back] + 2) % 4 : NOSE[back]);
+    }
+  // 信息学馆院内东排背后林地边上的 4 个电动车充电桩（维护者实地描述），每 5 m 一个
+  const Y0 = 261;
+  for (let k = 0; k < 4; k++) placeProp('ev-charger', cell([145.6, Y0 + 1.25 + k * 5]), 0.6, 0.6);
+  // 半圆车道南边东西向路上停着的通勤客车（据卫星图 S7）
+  placeProp('campus-bus', cell([105, 319]), 2.5, 12, 1);
+  placeProp('campus-bus', cell([165, 319]), 2.5, 12, 3);
 }
 
-// 出生点：北门内侧
-point('spawn', '北门内', T([gateLocal[0] - 2, gateLocal[1] + 14]), { radius: 3 * TILE });
+// 描过的单棵树（survey.json 的 trees，加上 treeRows 展开的行道树）：按冠幅挑最接近的树种，阔叶和针叶按位置交替
+{
+  const sizes = TREES.map((name) => ({ name, R: Number(name.split('-')[1]) / 10 }));
+  const rows = survey.treeRows.flatMap(({ from: [x0, y0], to: [x1, y1], gap, r }) => {
+    const n = Math.max(1, Math.round(Math.hypot(x1 - x0, y1 - y0) / gap));
+    return Array.from({ length: n + 1 }, (_, k): [number, number, number] => [x0 + ((x1 - x0) * k) / n, y0 + ((y1 - y0) * k) / n, r]);
+  });
+  for (const [x, y, R] of [...survey.trees, ...rows]) {
+    const p = cell([x, y]);
+    if (!inGrid(Math.floor(p[0]), Math.floor(p[1])) || solid[at(Math.floor(p[0]), Math.floor(p[1]))]) continue;
+    const kindOf = hash(Math.round(x), Math.round(y)) % 2 ? 'tree' : 'pine';
+    const pick = sizes.filter((t) => t.name.startsWith(kindOf)).reduce((a, b) => (Math.abs(b.R - R) < Math.abs(a.R - R) ? b : a));
+    point('prop', pick.name, p, { sprite: pick.name });
+    block(p, 1, 1);
+  }
+}
+
+// 林地里的树（DESIGN）：卫星图上树冠连片，看不清单棵树，只在描出的林地范围内每约 7 m 种一棵，留出林下空地。
+// 针叶与阔叶约各半（卫星图上林地里深色针叶树和浅色阔叶树混杂），冠幅见 tiles.ts 的 TREES
+{
+  const STEP = 7 / M;
+  for (let gy = STEP / 2; gy < H; gy += STEP)
+    for (let gx = STEP / 2; gx < W; gx += STEP) {
+      const h = hash(Math.round(gx * 10), Math.round(gy * 10));
+      const p: P = [gx + ((h % 100) / 100 - 0.5) * (3 / M), gy + (((h >>> 8) % 100) / 100 - 0.5) * (3 / M)];
+      const c = Math.floor(p[0]), r = Math.floor(p[1]);
+      if (!inGrid(c, r) || kind[at(c, r)] !== 'wood' || solid[at(c, r)] || nearAxis(c, r)) continue;
+      // 北门石柱前留空，别挡住校名
+      if (Math.abs(p[0] - gate[0]) < 18 / M && p[1] < gate[1] + 8 / M) continue;
+      // 树干离林地边缘至少一格，免得长在路上
+      if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dc, dr]) => !inGrid(c + dc, r + dr) || kind[at(c + dc, r + dr)] !== 'wood')) continue;
+      const sprite = TREES[(h >>> 16) % TREES.length];
+      point('prop', sprite, p, { sprite });
+      block(p, 1, 1);
+    }
+}
+
+// 出生点：北门内的进校路上
+point('spawn', '北门内', [gate[0], gate[1] + 14 / M], { radius: 2 * TILE });
 
 // 兴趣点：靠近时弹出介绍卡片。只写核实过的事实，来源编号见 docs/sources.md
-const POI: { name: string; at: P; text: string; src: string }[] = [
-  { name: '北门', at: gate, text: '南湖校区北门。四根石柱的校门，西侧大石柱上竖写校名“東北大學”，落款张学良。进门正对信息学馆。', src: 'S3,S4' },
-  { name: '校训石', at: monumentAt['校训石'], text: '刻着东北大学校训：自强不息，知行合一。', src: 'S1,S4,S5' },
-  { name: '信息学馆', at: T([-5.4, -66]), text: '原东北大学主楼，正门朝北、正对北门，中央是阶梯式塔楼。', src: 'S1,S3,S4' },
-  { name: '大书', at: book, text: '信息学馆与图书馆之间的校园雕塑。', src: 'S1' },
-  { name: '宁恩承图书馆', at: T([-18.8, 55]), text: '学校在八十周年校庆之际以宁恩承先生命名，纪念他在东北大学危难时期主持校务。', src: 'S1,S6' },
-  { name: '宁恩承先生像', at: monumentAt['宁恩承先生'], text: '宁恩承先生胸像，在图书馆南侧。', src: 'S1' },
-  { name: '张捷迁校友像', at: monumentAt['张捷迁校友'], text: '张捷迁校友胸像，在图书馆南侧。', src: 'S1' },
-  { name: '鼎', at: monumentAt['鼎'], text: '汉卿北路南侧草坪中的铜鼎。', src: 'S1,S2' },
-  { name: '能量球', at: monumentAt['能量球'], text: '信息学馆西侧的校园雕塑。', src: 'S1' },
+const POI: { name: string; at: P | undefined; text: string; src: string }[] = [
+  { name: '北门', at: gate, text: '南湖校区北门。四根石柱的校门，西侧大石柱上竖写校名“東北大學”，落款张学良。进门正对信息学馆。', src: 'S3,S4,S9' },
+  { name: '校训石', at: monumentAt['校训石'], text: '刻着东北大学校训：自强不息，知行合一。石长 7.2 米，由老五届校友捐赠，2022 年 9 月揭幕。', src: 'S1,S5,S11' },
+  { name: '信息学馆', at: [baseBox('信息学馆').cx, baseBox('信息学馆').y0 - 2 / M], text: '原东北大学主楼，正门朝北、正对北门，中央是阶梯式塔楼。现为信息科学与工程学院的主要办公楼。', src: 'S1,S3,S9,S10' },
+  { name: '大书', at: monumentAt['大书'], text: '信息学馆与图书馆之间的校园雕塑。', src: 'S1' },
+  { name: '宁恩承图书馆', at: [library.cx, library.y1 + 2 / M], text: '学校在八十周年校庆之际以宁恩承先生命名，纪念他在东北大学危难时期主持校务。', src: 'S1,S6' },
+  { name: '宁恩承先生像', at: monumentAt['宁恩承先生'], text: '宁恩承先生胸像，在图书馆南侧。', src: 'S1,S12,S14' },
+  { name: '张捷迁校友像', at: monumentAt['张捷迁校友'], text: '张捷迁校友胸像，在图书馆南侧。', src: 'S1,S13,S14' },
+  { name: '鼎', at: monumentAt['鼎'], text: '图书馆南面中轴上的铜鼎。', src: 'S1,S2,S17' },
 ];
-for (const p of POI) point('poi', p.name, p.at, { text: p.text, src: p.src, radius: 4 * TILE });
+for (const p of POI) if (p.at) point('poi', p.name, p.at, { text: p.text, src: p.src, radius: (16 / M) * TILE });
 
-// 建筑对象：footprint 外接矩形 + 高度图，美术工具按这些画图
+// 建筑对象：占地外接矩形 + 高度图，美术工具按这些画图
 for (const b of buildings) {
   let minC = W, maxC = 0, minR = H, maxR = 0;
   for (const i of b.cells.keys()) {
     const c = i % W, r = (i / W) | 0;
-    minC = Math.min(minC, c), maxC = Math.max(maxC, c), minR = Math.min(minR, r), maxR = Math.max(maxR, r);
+    (minC = Math.min(minC, c)), (maxC = Math.max(maxC, c)), (minR = Math.min(minR, r)), (maxR = Math.max(maxR, r));
   }
   const rows: string[] = [];
   for (let r = minR; r <= maxR; r++) {
@@ -402,34 +383,76 @@ for (const b of buildings) {
 }
 
 // ---------- 图层 ----------
-const PAVED: Kind[] = ['paving', 'band', 'sidewalk', 'asphalt', 'zebra', 'outside', 'outsideRoad', 'floor'];
+/** 斜边过渡：被填的角（东北、东南、西南、西北）对应的边缘掩码和对角方向 */
+const DIAG: [number, number, number][] = [[1 | 2, 1, -1], [2 | 4, 1, 1], [4 | 8, -1, 1], [8 | 1, -1, -1]];
+function diagFill(c: number, r: number, [, dx, dy]: [number, number, number]): 'asphalt' | 'paving' | undefined {
+  const a = kindAt(c + dx, r), b = kindAt(c, r + dy), d = kindAt(c + dx, r + dy);
+  for (const k of ['asphalt', 'paving'] as const) if (a === k && b === k && d === k) return k;
+  return undefined;
+}
+
+const PAVED: Kind[] = ['paving', 'asphalt', 'parking', 'outside', 'floor', 'track', 'court'];
+const ROAD: Kind[] = ['asphalt', 'parking'];
+const WALKABLE: Kind[] = ['grass', 'wood', 'paving', 'asphalt', 'parking', 'track', 'pitch', 'court'];
 const groundData: number[] = [], edgeData: number[] = [], blockedData: number[] = [];
-const kindAt = (c: number, r: number): Kind | null => (inGrid(c, r) ? kind[at(c, r)] : null);
-each((c, r, p, i) => {
-  const k = kind[i];
+each((c, r, _p, i) => {
+  const k = kind[i] === 'wall' ? (wallUnder.get(i) ?? 'grass') : kind[i];
   const variants = GROUND[k];
-  groundData.push(TILESET.firstgid + variants[hash(c, r) % variants.length]);
-  // 边缘：草地挨着铺装画一道路缘；铺装挨着车行道画路沿石
+  // 停车场：每格一道车位线（2 m，比真实的 2.5 m 略密）
+  const v = k === 'parking' ? 1 : k === 'pitch' ? c % 2 : hash(c, r) % variants.length;
+  groundData.push(TILESET.firstgid + variants[Math.min(v, variants.length - 1)]);
+  // 边缘：草地、林地挨着铺装画一道路缘；铺装挨着车行道画路沿石
   let mask = 0;
   const nb: [number, number, number][] = [[0, -1, 1], [1, 0, 2], [0, 1, 4], [-1, 0, 8]];
-  if (k === 'grass' || k === 'grassDark' || k === 'park') {
+  if (k === 'grass' || k === 'wood') {
     for (const [dx, dy, bit] of nb) if (PAVED.includes(kindAt(c + dx, r + dy) as Kind)) mask |= bit;
-    edgeData.push(mask ? TILESET.firstgid + TILESET.grassEdge + mask : 0);
-  } else if (k === 'paving' || k === 'band' || k === 'sidewalk' || k === 'outside') {
-    for (const [dx, dy, bit] of nb) if (['asphalt', 'zebra', 'outsideRoad'].includes(kindAt(c + dx, r + dy) as Kind)) mask |= bit;
+    // 斜路：两条相邻边和夹着的那个角都是同一种路面，就把这一角切成斜边，免得一格一格的台阶
+    const corner = DIAG.findIndex(([m]) => m === mask);
+    const fill = corner >= 0 ? diagFill(c, r, DIAG[corner]) : undefined;
+    if (fill) edgeData.push(TILESET.firstgid + TILESET.diag[fill] + corner);
+    else edgeData.push(mask ? TILESET.firstgid + TILESET.grassEdge + mask : 0);
+  } else if (k === 'paving') {
+    for (const [dx, dy, bit] of nb) if (ROAD.includes(kindAt(c + dx, r + dy) as Kind)) mask |= bit;
     edgeData.push(mask ? TILESET.firstgid + TILESET.curb + mask : 0);
+  } else if (k === 'asphalt') {
+    const lane = laneAt(c, r);
+    edgeData.push(lane < 0 ? 0 : TILESET.firstgid + TILESET.lane[lane]);
   } else edgeData.push(0);
-  const walk = (inside[i] || apron(p)) && !['wall', 'water', 'floor', 'flower', 'hedge'].includes(k) && !solid[i];
-  blockedData.push(walk ? 0 : TILESET.firstgid + TILESET.blocked);
+  blockedData.push(WALKABLE.includes(kind[i]) && !solid[i] ? 0 : TILESET.firstgid + TILESET.blocked);
 });
 
+/**
+ * 车道中心虚线：沥青路宽 4–7 格（8–14 m）、上下（或左右）相邻几排宽度不变的直路段，在路中线上画。
+ * 返回 TILESET.lane 的下标，不画返回 -1
+ */
+function laneAt(c: number, r: number): number {
+  const isRoad = (cc: number, rr: number) => kindAt(cc, rr) === 'asphalt';
+  /** 沿 (dx, dy) 方向量这一排路面的起点和宽度 */
+  const span = (cc: number, rr: number, dx: number, dy: number): [number, number] => {
+    let a = 0, b = 0;
+    while (isRoad(cc - dx * (a + 1), rr - dy * (a + 1))) a++;
+    while (isRoad(cc + dx * (b + 1), rr + dy * (b + 1))) b++;
+    return [dx ? cc - a : rr - a, a + b + 1];
+  };
+  for (const [dx, dy, base] of [[1, 0, 0], [0, 1, 2]] as const) {
+    const [s0, w] = span(c, r, dx, dy);
+    if (w < 4 || w > 7) continue;
+    // 前后各两排宽度一样，才算直路段
+    const straight = [-2, -1, 1, 2].every((k) => {
+      const cc = c + dy * k, rr = r + dx * k;
+      if (!isRoad(cc, rr)) return false;
+      const [s1, w1] = span(cc, rr, dx, dy);
+      return s1 === s0 && w1 === w;
+    });
+    if (!straight) continue;
+    const pos = dx ? c : r;
+    if (w % 2 && pos === s0 + (w - 1) / 2) return base;
+    if (!(w % 2) && pos === s0 + w / 2) return base + 1;
+  }
+  return -1;
+}
+
 const tile = (name: string, data: number[], visible = true): TiledLayer => ({ type: 'tilelayer', name, width: W, height: H, data, visible });
-const layers = [
-  { id: 1, ...tile(LAYER.ground, groundData), x: 0, y: 0, opacity: 1 },
-  { id: 2, ...tile(LAYER.edges, edgeData), x: 0, y: 0, opacity: 1 },
-  { id: 3, ...tile(LAYER.blocked, blockedData, false), x: 0, y: 0, opacity: 0.4 },
-  { id: 4, type: 'objectgroup', name: LAYER.objects, objects, visible: true, x: 0, y: 0, opacity: 1, draworder: 'topdown' },
-];
 const map = {
   type: 'map',
   version: '1.10',
@@ -445,8 +468,8 @@ const map = {
   nextobjectid: nextId,
   properties: props({
     area: '南湖校区·北门—信息学馆—宁恩承图书馆',
-    metersPerTile: MPT,
-    orientation: '屏幕上方为地理南（整体旋转 180°）',
+    metersPerTile: M,
+    orientation: '上北（路网转正 3.85°）',
     attribution: '地图数据 © OpenStreetMap contributors（ODbL）',
   }),
   tilesets: [
@@ -464,7 +487,13 @@ const map = {
       spacing: 0,
     },
   ],
-  layers,
+  layers: [
+    { id: 1, ...tile(LAYER.ground, groundData), x: 0, y: 0, opacity: 1 },
+    { id: 2, ...tile(LAYER.edges, edgeData), x: 0, y: 0, opacity: 1 },
+    { id: 3, ...tile(LAYER.blocked, blockedData, false), x: 0, y: 0, opacity: 0.4 },
+    { id: 4, type: 'objectgroup', name: LAYER.objects, objects, visible: true, x: 0, y: 0, opacity: 1, draworder: 'topdown' },
+  ],
 };
 writeFileSync(new URL('../assets/map.json', import.meta.url), JSON.stringify(map));
-console.log(`assets/map.json：${W}×${H} 格，${buildings.length} 栋楼，${objects.length} 个物件`);
+const trees = objects.filter((o) => TREES.includes(String(o.name))).length;
+console.log(`assets/map.json：${W}×${H} 格，${buildings.length} 栋楼，${trees} 棵树，${objects.length} 个物件`);

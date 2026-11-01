@@ -1,0 +1,3 @@
+[submodule "art"]
+	path = art
+	url = https://github.com/mituan-ai/pixel-neu-art.git

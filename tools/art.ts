@@ -1,16 +1,19 @@
 // 生成全部程序化美术：地面瓦片、建筑、物件、角色、表情、调色板。用法：npm run art（先 npm run map）
 // 产物写进 assets/，同时在 data/preview.png 拼一张全图预览（不进仓库），用来检查风格是否统一。
 // 某张图改成手绘后，把它从 HANDMADE 之外的生成列表里拿掉，避免被覆盖（规则见 assets/AGENTS.md）。
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { EMOTES } from '../shared/social.ts';
-import { LAYER, TILE, prop, type TiledMap } from '../shared/world.ts';
+import { FACING, VIEWS, VIEW_NAME, type View } from '../shared/view.ts';
+import { LAYER, METERS_PER_TILE, TILE, prop, type TiledMap } from '../shared/world.ts';
 import { drawAvatarSheet } from './art-avatar.ts';
 import { drawBuilding, type BuildingSpec } from './art-building.ts';
 import { PAL, type PalKey } from './palette.ts';
-import { Pix, rng } from './pix.ts';
-import { TILESET } from './tiles.ts';
+import { Pix, loadPix, rng } from './pix.ts';
+import { TILESET, TREES } from './tiles.ts';
 
 const out = (p: string) => new URL(`../assets/${p}`, import.meta.url);
+/** 每米像素（物件和树按真实尺寸画） */
+const PPM = TILE / METERS_PER_TILE;
 
 /** 已经换成手绘的文件名（相对 assets/），生成时跳过 */
 const HANDMADE = new Set<string>([]);
@@ -42,24 +45,25 @@ function drawTile(i: number): Pix {
   const r = rng(1000 + i);
   switch (i) {
     case 0: case 1: case 2: case 3: {
-      noise(p, 10 + i, 'grass1', [['grass2', 0.12], ['grass0', 0.05]]);
-      // 草叶：两像素高的小竖笔
-      for (let k = 0; k < 3 + i; k++) {
+      noise(p, 10 + i, 'grass1', [['grass2', 0.03], ['grass0', 0.015]]);
+      // 草叶：两像素高的小竖笔，只在少数瓦片上
+      for (let k = 0; k < i - 1; k++) {
         const x = (r() * 15) | 0, y = 1 + ((r() * 14) | 0);
         p.px(x, y, 'grass3'), p.px(x, y + 1, 'grass0');
       }
-      if (i === 3) for (let k = 0; k < 3; k++) p.px((r() * 15) | 0, (r() * 15) | 0, k ? 'flowerW' : 'flowerY');
+
       break;
     }
     case 4: case 5:
       noise(p, 20 + i, 'asph1', [['asph0', 0.1], ['asph2', 0.06]]);
       break;
     case 6: case 7: {
-      // 方形石板 8×8，缝用深一档
-      p.rect(0, 0, TILE, TILE, 'pave2');
-      for (let k = 0; k < TILE; k++) p.px(k, 0, 'pave1'), p.px(k, 8, 'pave1'), p.px(0, k, 'pave1'), p.px(8, k, 'pave1');
-      for (let k = 1; k < 8; k++) p.px(k, 1, 'pave3'), p.px(k + 8, 9, 'pave3');
-      if (i === 7) p.rect(9, 1, 7, 7, 'pave1'), p.px(12, 4, 'pave0');
+      // 1 m 见方的石板，缝用深一档；少数石板颜色略深
+      for (let y = 0; y < TILE; y += PPM)
+        for (let x = 0; x < TILE; x += PPM) {
+          p.rect(x, y, PPM, PPM, i === 7 && x === 0 && y === 0 ? 'pave1' : 'pave2');
+          p.hline(x, y, PPM, 'pave1'), p.vline(x, y, PPM, 'pave1');
+        }
       break;
     }
     case 8: case 9: {
@@ -87,22 +91,17 @@ function drawTile(i: number): Pix {
       for (let k = 0; k < 3; k++) p.hline((r() * 10) | 0, (r() * 15) | 0, 4, 'water2');
       break;
     case 12: {
-      // 花坛：矮绿篱围一圈红花
-      p.rect(0, 0, TILE, TILE, 'hedge');
-      p.rect(2, 2, 12, 12, 'leaf1');
+      // 花坛：绿叶里点红花
+      p.rect(0, 0, TILE, TILE, 'leaf1');
       for (let k = 0; k < 18; k++) p.px(2 + ((r() * 12) | 0), 2 + ((r() * 12) | 0), k % 4 ? 'flowerR' : 'flowerP');
-      p.hline(0, 15, TILE, 'leaf0');
       break;
     }
     case 13:
       noise(p, 33, 'hedge', [['leaf2', 0.2], ['leaf0', 0.1]]);
-      p.hline(0, 15, TILE, 'leaf0');
       break;
     case 14: {
-      // 校外：压暗的大块铺装，一眼看出不能进入
-      p.rect(0, 0, TILE, TILE, 'pave0');
-      for (let k = 0; k < TILE; k++) p.px(k, 0, 'wall0'), p.px(0, k, 'wall0');
-      for (let k = 0; k < 10; k++) p.px((r() * 15) | 0, (r() * 15) | 0, 'wall0');
+      // 校外和还没描过的地方：深灰色块，一眼看出不能进入
+      noise(p, 34, 'slate', [['ink', 0.04]]);
       break;
     }
     case 52: {
@@ -113,12 +112,33 @@ function drawTile(i: number): Pix {
       break;
     }
     case 53: case 54:
-      noise(p, 60 + i, 'grass0', [['grass1', 0.18], ['leaf1', 0.06]]);
-      for (let k = 0; k < 4; k++) {
-        const x = (r() * 15) | 0, y = 1 + ((r() * 14) | 0);
-        p.px(x, y, 'grass2'), p.px(x, y + 1, 'leaf0');
-      }
+      // 林下地面：树荫里的深色草
+      noise(p, 60 + i, 'grass0', [['leaf1', 0.04], ['leaf0', 0.03]]);
+      if (i === 54) p.px(5, 9, 'grass1'), p.px(5, 10, 'leaf0');
       break;
+    case 72: case 73:
+      // 塑胶跑道：红色颗粒面
+      noise(p, 80 + i, 'track1', [['track0', 0.12]]);
+      break;
+    case 74: case 75:
+      // 人工草：割草条纹，相邻两格深浅交替（地图按列挑）
+      noise(p, 80 + i, i === 74 ? 'grass1' : 'grass2', [['grass0', 0.03]]);
+      break;
+    case 76:
+      noise(p, 86, 'court1', [['court0', 0.06]]);
+      break;
+    case 56:
+      // 停车位线：一道 1 像素宽的白线（约 12 cm）
+      noise(p, 24, 'asph1', [['asph0', 0.1], ['asph2', 0.06]]);
+      p.vline(0, 0, TILE, 'paint');
+      break;
+    case 57: case 58: case 59: case 60: {
+      // 车道中心虚线：2 m 一段，透明底，叠在沥青上
+      const at = (i - 57) % 2 ? 0 : TILE / 2 - 1;
+      if (i < 59) p.rect(at, 4, 2, 8, 'paint');
+      else p.rect(4, at, 8, 2, 'paint');
+      break;
+    }
     case 55:
       noise(p, 70, 'asph0', [['shadow', 0.08], ['asph1', 0.05]]);
       break;
@@ -136,6 +156,21 @@ function drawTile(i: number): Pix {
     case 51:
       p.rect(0, 0, TILE, TILE, 'pave0');
       break;
+    case 64: case 65: case 66: case 67: case 68: case 69: case 70: case 71: {
+      // 斜边过渡：草地格的一个角填成沥青或铺装，斜边上一道路缘
+      const base = drawTile(i < 68 ? 4 : 6);
+      const corner = (i - 64) % 4; // 东北、东南、西南、西北
+      const fx = (x: number) => (corner === 0 || corner === 1 ? x : TILE - 1 - x);
+      const fy = (y: number) => (corner === 1 || corner === 2 ? y : TILE - 1 - y);
+      for (let y = 0; y < TILE; y++)
+        for (let x = 0; x < TILE; x++) {
+          const d = fx(x) + fy(y) - (TILE - 1); // 0 在斜边上，正的一侧是被填的角
+          if (d > 0) p.data.set(base.data.subarray((y * TILE + x) * 4, (y * TILE + x) * 4 + 4), (y * TILE + x) * 4);
+          else if (d === 0) p.px(x, y, 'curb');
+          else if (d === -1) p.px(x, y, 'grass0');
+        }
+      break;
+    }
     default: {
       // 16–31 草地边缘、32–47 路沿石：按掩码在对应边上画
       const isGrass = i >= TILESET.grassEdge && i < TILESET.grassEdge + 16;
@@ -172,119 +207,178 @@ interface PropArt {
 }
 const shadowAt = (p: Pix, cx: number, cy: number, rx: number, ry: number) => p.ellipse(cx, cy, rx, ry, 'shadow', 60);
 
-function pine(): PropArt {
-  // 高大的柱状针叶树（北门内与前庭两侧，据照片）
-  const p = new Pix(16, 44);
-  shadowAt(p, 9, 41, 6, 2);
-  p.rect(7, 36, 2, 6, 'trunk');
-  for (let y = 2; y < 38; y++) {
-    const t = (y - 2) / 36;
-    const half = Math.round(1 + t * 5.5 + (y % 5 === 0 ? -0.6 : 0));
-    for (let x = -half; x <= half; x++) {
-      const col: PalKey = x < -half / 3 ? 'pine2' : x > half / 3 ? 'pine0' : 'pine1';
-      p.px(8 + x, y, (y % 5 === 4 && Math.abs(x) === half) ? 'pine0' : col);
+/** 只往透明处画的地面阴影（不盖住树本身） */
+function shadowUnder(p: Pix, cx: number, cy: number, rx: number, ry: number): void {
+  for (let y = -ry; y <= ry; y++)
+    for (let x = -Math.round(rx); x <= rx; x++)
+      if ((x * x) / (rx * rx) + (y * y) / (ry * ry) <= 1 && !p.opaque(Math.round(cx + x), Math.round(cy + y))) p.px(cx + x, cy + y, 'shadow', 60);
+}
+
+/** 阔叶树：树冠半径 R 米。树冠由许多小团叶簇成，左上亮、右下暗 */
+function broadleaf(R: number, seed: number): PropArt {
+  const r = Math.round(R * PPM), ry = Math.round(r * 0.85), trunk = 11;
+  const sy = Math.round(r * 0.3);
+  const w = 2 * r + 12 + Math.round(r * 0.3), h = 2 * ry + trunk + 6 + sy;
+  const p = new Pix(w, h);
+  const rand = rng(seed);
+  const cx = r + 6, cy = ry + 3, ay = h - sy - 2;
+  p.rect(cx - 1, cy + ry * 0.4, 3, ay - cy - ry * 0.4, 'trunk');
+  p.vline(cx - 1, cy + ry * 0.4, ay - cy - ry * 0.4, 'brick0');
+  const blob = Math.max(3, Math.round(r * 0.3));
+  for (let k = 0; k < r * 1.6; k++) {
+    const a = rand() * Math.PI * 2, d = Math.sqrt(rand()) * (1 - blob / r);
+    const x = cx + Math.cos(a) * d * r, y = cy + Math.sin(a) * d * ry;
+    const light = (x - cx) / r + (y - cy) / ry;
+    p.ellipse(Math.round(x), Math.round(y), blob, Math.round(blob * 0.85), light < -0.5 ? 'leaf2' : light < 0.4 ? 'leaf1' : 'leaf0');
+  }
+  // 亮面上再点几簇高光
+  for (let k = 0; k < r / 4; k++) {
+    const a = Math.PI * (1.1 + rand() * 0.6), d = 0.3 + rand() * 0.45;
+    p.ellipse(Math.round(cx + Math.cos(a) * d * r), Math.round(cy + Math.sin(a) * d * ry), Math.round(blob / 2), Math.round(blob / 2.5), 'grass3');
+  }
+  p.outline('ink');
+  // 地面阴影最后画：不描边，落在树干右下
+  shadowUnder(p, cx + r * 0.3, ay, r * 0.9, sy);
+  return { pix: p, ax: Math.round(cx), ay };
+}
+
+/** 针叶树：底部半径 R 米，高约 3.2R，层层收分 */
+function conifer(R: number, seed: number): PropArt {
+  const r = Math.round(R * PPM), hc = Math.round(R * 3.2 * PPM), trunk = 5;
+  const sy = Math.round(r * 0.3);
+  const w = 2 * r + 12 + Math.round(r * 0.4), h = hc + trunk + 6 + sy;
+  const p = new Pix(w, h);
+  const rand = rng(seed);
+  const cx = r + 6, ay = h - sy - 2, base = ay - trunk;
+  p.rect(cx - 1, base - 2, 3, trunk + 2, 'trunk');
+  const tiers = Math.max(4, Math.round(R * 2));
+  for (let t = 0; t < tiers; t++) {
+    // 每层是一个下沿略垂的三角，越往上越窄
+    const yb = base - (t * hc * 0.8) / tiers, ht = (hc * 0.38) * (1 - t / tiers / 2);
+    const half = r * (1 - t / tiers) + 2;
+    for (let y = 0; y < ht; y++) {
+      const hw = Math.round(half * ((y + 1) / ht) * (0.9 + 0.1 * rand()));
+      const yy = Math.round(yb - ht + y);
+      for (let x = -hw; x <= hw; x++) p.px(cx + x, yy, x < -hw / 3 ? 'pine2' : x > hw / 3 ? 'pine0' : 'pine1');
     }
   }
   p.outline('ink');
-  return { pix: p, ax: 8, ay: 42 };
+  shadowUnder(p, cx + r * 0.4, ay, r, sy);
+  return { pix: p, ax: cx, ay };
 }
 
-function tree(): PropArt {
-  // 阔叶行道树：圆冠
-  const p = new Pix(24, 32);
-  const r = rng(77);
-  shadowAt(p, 13, 29, 8, 2);
-  p.rect(11, 20, 2, 10, 'trunk');
-  p.ellipse(12, 11, 10, 9, 'leaf1');
-  for (let k = 0; k < 60; k++) {
-    const a = r() * Math.PI * 2, d = r() * 8;
-    const x = 12 + Math.cos(a) * d, y = 11 + Math.sin(a) * d * 0.9;
-    p.px(x, y, x + y < 22 ? 'leaf2' : 'leaf0');
+/** 校名「東北大學」的 12 px 点阵（文泉驿点阵正黑栅格化），竖排刻在北门西侧大石柱上 */
+const NAME_GLYPHS = [
+  ['............', '............', '.....#......', '.....#......', '.#########..', '..#######...', '..#..#..#...', '..#######...', '..#######...', '....###.....', '...#.#.#....', '..#..#..##..'],
+  ['............', '....#..#....', '....#..#....', '....#..#..#.', '#####..#.#..', '....#..##...', '....#..#....', '....#..#....', '....#..#....', '...##..#...#', '###.#..#...#', '....#..#####'],
+  ['............', '....#.......', '....#.......', '....#.......', '##########..', '....#.......', '....##......', '...#.#......', '...#..#.....', '..#...##....', '.#.....##...', '#.......##..'],
+  ['............', '............', '.##.##.###..', '.####.####..', '.#..###..#..', '.##.###.##..', '###########.', '#.........#.', '...#####....', '.##########.', '.....#......', '.....#......'],
+];
+
+/** 盒子在视角 v 下的屏幕宽、顶面进深（世界宽 W 沿东西、深 D 沿南北） */
+const boxView = (v: View, W: number, D: number) => (v % 2 ? { sw: D, sd: W } : { sw: W, sd: D });
+/** 某个地理朝向的面在视角 v 下朝屏幕哪边：0 上、1 右、2 下、3 左 */
+const screenSide = (v: View, face: 'N' | 'E' | 'S' | 'W') => ('NESW'.indexOf(face) - v + 4) % 4;
+
+/**
+ * 北门石柱（据 R-gate-03 照片、R-gate-80 卫星图）：
+ * 大柱约 4 m 宽、3 m 深、8 m 高，小柱约 2.5×2×5 m；柱头是两道出挑的檐，中间一圈浮雕带，顶上四角各起一块。
+ * 西侧大柱北面嵌白底竖排校名，旁边一列落款；两根大柱朝车道的一面各挂一盏壁灯。
+ */
+function pylon(big: boolean, v: View, plaque: boolean, lamp: 'E' | 'W' | null): PropArt {
+  const { sw, sd } = boxView(v, (big ? 4 : 2.5) * PPM, (big ? 3 : 2) * PPM);
+  const h = (big ? 8 : 5) * PPM;
+  const pad = 4;
+  const p = new Pix(sw + pad * 2 + 8, sd + h + 10);
+  const x0 = pad, ground = 6 + sd + h; // 正面底边
+  const capH = big ? 12 : 10, shaftTop = ground - h + capH;
+  // 柱身与基座
+  p.rect(x0, shaftTop, sw, ground - shaftTop, 'stone2');
+  p.rect(x0, shaftTop, 2, ground - shaftTop, 'stone3');
+  p.rect(x0 + sw - 3, shaftTop, 3, ground - shaftTop, 'stone1');
+  p.rect(x0 - 1, ground - 5, sw + 2, 5, 'stone1');
+  p.hline(x0 - 1, ground - 5, sw + 2, 'stone3');
+  // 柱头：下檐、浮雕带、上檐，各比柱身宽出一两像素
+  const capTop = ground - h;
+  p.rect(x0 - 1, shaftTop - 3, sw + 2, 3, 'stone3');
+  p.hline(x0 - 1, shaftTop - 1, sw + 2, 'stone0');
+  p.rect(x0, capTop + 5, sw, capH - 8, 'stone2');
+  for (let x = x0 + 1; x < x0 + sw - 1; x++) if ((x - x0) % 4 < 2) p.px(x, capTop + 6 + ((x - x0) % 8 < 4 ? 0 : 1), 'stone0'), p.px(x, capTop + capH - 5, 'stone1');
+  p.rect(x0 - 2, capTop + 2, sw + 4, 3, 'stone3');
+  p.hline(x0 - 2, capTop + 4, sw + 4, 'stone1');
+  // 顶面（进深 sd）和四角的起块
+  p.rect(x0 - 2, capTop + 2 - sd, sw + 4, sd, 'stone2');
+  p.hline(x0 - 2, capTop + 2 - sd, sw + 4, 'stone3');
+  for (const cx of [x0 - 2, x0 + sw - 2])
+    for (const cy of [capTop + 2 - sd, capTop + 2 - 4]) {
+      p.rect(cx, cy - 3, 4, 4, 'stone3');
+      p.rect(cx, cy + 1, 4, 2, 'stone1');
+    }
+  if (plaque && screenSide(v, 'N') === 2) {
+    // 校名牌：白底黑字竖排，左边一列小字落款（字形不可辨，画成点）
+    // 每个字形第一行是空的，去掉后 11 行一字，正好放进大柱柱身
+    const gw = 14, gh = 4 * 11 + 1, gx = x0 + Math.round((sw - gw) / 2) + 2, gy = shaftTop + 1;
+    p.rect(gx, gy, gw, gh, 'white');
+    p.vline(gx, gy, gh, 'stone1'), p.hline(gx, gy, gw, 'stone1');
+    NAME_GLYPHS.forEach((g, k) => g.slice(1).forEach((row, y) => [...row].forEach((ch, x) => ch === '#' && p.px(gx + 1 + x, gy + 1 + k * 11 + y, 'ink'))));
+    for (let y = gy + 18; y < gy + 40; y += 3) p.px(gx - 3, y, 'ink');
   }
-  p.ellipse(9, 7, 4, 3, 'leaf2');
-  p.outline('ink');
-  return { pix: p, ax: 12, ay: 30 };
-}
-
-function treePit(): PropArt {
-  // 树池里的小树（图书馆四周一圈）
-  const p = new Pix(16, 26);
-  p.rect(2, 20, 12, 5, 'stone1');
-  p.rect(3, 21, 10, 3, 'trunk');
-  p.rect(7, 12, 2, 10, 'trunk');
-  p.ellipse(8, 8, 6, 6, 'leaf1');
-  p.ellipse(6, 6, 3, 2, 'leaf2');
-  p.outline('ink');
-  return { pix: p, ax: 8, ay: 24 };
-}
-
-function lamp(): PropArt {
-  const p = new Pix(8, 30);
-  p.rect(3, 6, 2, 22, 'slate');
-  p.rect(1, 2, 6, 4, 'slate');
-  p.rect(2, 3, 4, 2, 'flowerW');
-  p.rect(2, 27, 4, 2, 'slate');
-  p.outline('ink');
-  return { pix: p, ax: 4, ay: 29 };
-}
-
-function bench(): PropArt {
-  const p = new Pix(18, 12);
-  shadowAt(p, 10, 10, 8, 1);
-  p.rect(1, 2, 16, 3, 'trunk'); // 靠背
-  p.hline(1, 2, 16, 'brick2');
-  p.rect(1, 6, 16, 2, 'brick1'); // 坐板
-  p.rect(2, 8, 1, 3, 'slate'), p.rect(15, 8, 1, 3, 'slate');
-  p.outline('ink');
-  return { pix: p, ax: 9, ay: 11 };
-}
-
-function pylon(kind: 'big' | 'plaque' | 'small'): PropArt {
-  // 北门石柱：方柱、上部收分出檐，顶部一圈装饰带（据校门照片）
-  const small = kind === 'small';
-  const w = small ? 14 : 20, h = small ? 40 : 60;
-  const p = new Pix(w + 4, h + 3);
-  shadowAt(p, w / 2 + 3, h, w / 2 + 1, 2);
-  const x0 = 2, shaftTop = small ? 10 : 14;
-  p.rect(x0 + 1, shaftTop, w - 2, h - shaftTop, 'stone2');
-  p.rect(x0 + 1, shaftTop, 2, h - shaftTop, 'stone3');
-  p.rect(x0 + w - 4, shaftTop, 2, h - shaftTop, 'stone1');
-  p.rect(x0, h - 4, w, 4, 'stone1'); // 基座
-  p.rect(x0, shaftTop - 4, w, 4, 'stone1'); // 檐
-  p.hline(x0, shaftTop - 4, w, 'stone3');
-  p.rect(x0 + 1, 3, w - 2, shaftTop - 7, 'stone2'); // 顶部
-  for (let x = x0 + 2; x < x0 + w - 2; x += 3) p.px(x, 5, 'stone0'); // 装饰带
-  p.rect(x0 + 3, 0, w - 6, 3, 'stone1');
-  if (kind === 'plaque') {
-    // 竖写校名牌：白底黑字（字形抽象成笔画块）
-    const px0 = x0 + 6, py0 = shaftTop + 6;
-    p.rect(px0, py0, 8, 30, 'flowerW');
-    for (let k = 0; k < 4; k++) {
-      const y = py0 + 2 + k * 7;
-      p.rect(px0 + 2, y, 4, 1, 'ink');
-      p.rect(px0 + 3, y + 1, 1, 4, 'ink');
-      p.px(px0 + 5, y + 3, 'ink'), p.px(px0 + 2, y + 4, 'ink');
+  if (lamp) {
+    // 壁灯：挂在柱身中上部；那一面朝屏幕下方时画在正中，朝左右时伸出柱外
+    const side = screenSide(v, lamp), ly = shaftTop + Math.round((ground - shaftTop) * 0.25);
+    const at = side === 2 ? x0 + Math.round(sw / 2) - 2 : side === 1 ? x0 + sw : side === 3 ? x0 - 5 : -1;
+    if (at >= 0) {
+      p.rect(at, ly, 5, 2, 'bronze0');
+      p.rect(at + 1, ly + 2, 3, 5, 'flowerY');
+      p.hline(at, ly + 7, 5, 'bronze0');
     }
   }
   p.outline('ink');
-  return { pix: p, ax: w / 2 + 2, ay: h };
+  // 投影：落在右侧地面
+  for (let y = ground - sd; y < ground; y++) for (let x = x0 + sw + 2; x < x0 + sw + 10; x++) if (!p.opaque(x, y)) p.px(x, y, 'shadow', 60);
+  // 锚点在占地中心
+  return { pix: p, ax: x0 + sw / 2, ay: ground - sd / 2 };
 }
 
-function mottoStone(): PropArt {
-  // 校训石：深色梯形底座刻金字“自强不息 知行合一”，上置灰色纹理景石（据照片）
-  const p = new Pix(36, 30);
-  shadowAt(p, 19, 27, 17, 2);
-  for (let y = 0; y < 9; y++) p.hline(2 + Math.max(0, 2 - y), 18 + y, 32 - 2 * Math.max(0, 2 - y), y === 0 ? 'grey0' : 'slate');
-  for (let k = 0; k < 8; k++) p.rect(6 + k * 3 + (k >= 4 ? 2 : 0), 22, 2, 2, 'gold');
-  p.ellipse(18, 10, 8, 8, 'stone1');
-  p.ellipse(16, 8, 5, 5, 'stone2');
-  for (let k = 0; k < 6; k++) p.px(12 + k * 2, 6 + ((k * 5) % 7), 'stone0'), p.px(13 + k * 2, 7 + ((k * 3) % 6), 'water2');
+/** 黑色铁栅栏：东西向一段，长 L 米、高 1.6 m（据 R-gate-03） */
+function fence(L: number, v: View): PropArt {
+  const len = Math.round(L * PPM), h = Math.round(1.6 * PPM);
+  if (v % 2 === 0) {
+    const p = new Pix(len + 2, h + 4);
+    for (let x = 1; x <= len; x += 2) p.vline(x, 2, h, 'slate');
+    p.hline(1, 1, len, 'ink'), p.hline(1, 3, len, 'ink'), p.hline(1, h - 1, len, 'ink');
+    for (let x = 1; x <= len; x++) if (!p.opaque(x, h + 2)) p.px(x, h + 2, 'shadow', 50);
+    return { pix: p, ax: len / 2 + 1, ay: h + 1 };
+  }
+  // 侧看：只剩一条竖着的栏杆，沿屏幕上下延伸
+  const p = new Pix(5, len + h + 2);
+  for (let y = 0; y < len; y++) p.vline(1, y + 1, h, 'slate'), p.px(1, y + 1, 'ink');
+  p.vline(1, len + 1, h, 'ink');
+  for (let y = h; y < len + h; y++) p.px(3, y, 'shadow', 50);
+  return { pix: p, ax: 2, ay: h + len / 2 };
+}
+
+/** 北门车道中间的蓝色岗亭（据 R-gate-03）：约 1.6 m 见方、2.6 m 高，四面开窗；照片上的字不可辨，不画 */
+function booth(v: View): PropArt {
+  const s = Math.round(1.6 * PPM), h = Math.round(2.6 * PPM);
+  const p = new Pix(s + 10, s + h + 6);
+  const x0 = 2, ground = 3 + s + h;
+  p.rect(x0, ground - h, s, h, 'water0');
+  p.rect(x0 + 2, ground - h + 4, s - 4, 8, 'glass2');
+  p.vline(x0 + Math.round(s / 2), ground - h + 4, 8, 'water0');
+  p.rect(x0, ground - 3, s, 3, 'flowerY');
+  for (let x = x0; x < x0 + s; x += 4) p.rect(x, ground - 3, 2, 3, 'ink');
+  p.rect(x0 - 1, ground - h - s, s + 2, s, 'water1');
+  p.hline(x0 - 1, ground - h - s, s + 2, 'water2');
+  p.rect(x0 + 3, ground - h - s - 3, s - 6, 3, 'flowerR');
   p.outline('ink');
-  return { pix: p, ax: 18, ay: 27 };
+  for (let y = ground - s; y < ground; y++) for (let x = x0 + s + 1; x < x0 + s + 6; x++) if (!p.opaque(x, y)) p.px(x, y, 'shadow', 60);
+  void v;
+  return { pix: p, ax: x0 + s / 2, ay: ground - s / 2 };
 }
 
 function sculpture(): PropArt {
-  // 外观未核实的雕塑（大书、能量球）：先用统一的底座占位，核实后替换（见 docs/design.md）
+  // 外观未核实的雕塑（大书、能量球）：先用统一的底座占位，核实后替换（见 docs/sources.md 待核实）
   const p = new Pix(20, 26);
   shadowAt(p, 11, 23, 9, 2);
   p.rect(3, 14, 14, 10, 'stone1');
@@ -297,66 +391,184 @@ function sculpture(): PropArt {
   return { pix: p, ax: 10, ay: 24 };
 }
 
-function bust(): PropArt {
-  // 铜像胸像 + 石基座
-  const p = new Pix(16, 30);
-  shadowAt(p, 9, 27, 7, 2);
-  p.rect(3, 14, 10, 14, 'stone2');
-  p.rect(3, 14, 2, 14, 'stone3');
-  p.rect(11, 14, 2, 14, 'stone1');
-  p.rect(4, 8, 8, 6, 'bronze1'); // 肩
-  p.rect(6, 1, 4, 7, 'bronze1'); // 头
-  p.rect(6, 1, 2, 7, 'bronze2');
-  p.rect(4, 8, 2, 6, 'bronze2');
-  p.outline('ink');
-  return { pix: p, ax: 8, ay: 28 };
+/** 把图逆时针转 k 个 90°：平铺在地上的物件，视角转了就跟着转 */
+function rotCCW(a: PropArt, k: number): PropArt {
+  let { pix, ax, ay } = a;
+  for (let i = 0; i < k % 4; i++) {
+    const q = new Pix(pix.h, pix.w);
+    for (let y = 0; y < pix.h; y++)
+      for (let x = 0; x < pix.w; x++) {
+        const o = (y * pix.w + x) * 4;
+        if (pix.data[o + 3]) q.px(y, pix.w - 1 - x, (pix.data[o] << 16) | (pix.data[o + 1] << 8) | pix.data[o + 2], pix.data[o + 3]);
+      }
+    [pix, ax, ay] = [q, ay, pix.w - ax];
+  }
+  return { pix, ax, ay };
 }
 
-function ding(): PropArt {
-  // 铜鼎：圆腹、双立耳、三足，腹部一圈纹饰（据照片）
-  const p = new Pix(24, 30);
-  shadowAt(p, 13, 27, 10, 2);
-  p.rect(2, 22, 20, 6, 'stone1');
-  p.hline(2, 22, 20, 'stone3');
-  p.rect(5, 16, 2, 6, 'bronze0'), p.rect(11, 17, 2, 5, 'bronze0'), p.rect(17, 16, 2, 6, 'bronze0');
-  p.ellipse(12, 12, 9, 6, 'bronze1');
-  p.rect(3, 6, 18, 2, 'bronze2'); // 口沿
-  for (let x = 5; x < 20; x += 2) p.px(x, 12, 'bronze0'), p.px(x + 1, 13, 'bronze2');
-  p.rect(5, 1, 3, 5, 'bronze1'), p.rect(16, 1, 3, 5, 'bronze1'); // 立耳
-  p.px(6, 2, 'bronze0'), p.px(6, 3, 'bronze0'), p.px(17, 2, 'bronze0'), p.px(17, 3, 'bronze0');
-  p.outline('ink');
-  return { pix: p, ax: 12, ay: 27 };
+/** 宁恩承图书馆南入口的大台阶（据 R-library-11 照片约 12 级）：宽 23 m、进深 4 m，世界朝向下踏步朝南 */
+function librarySteps(): PropArt {
+  const w = 23 * PPM, d = 4 * PPM;
+  const p = new Pix(w, d);
+  for (let y = 0; y < d; y++) p.hline(0, y, w, y % 3 === 2 ? 'stone1' : y % 3 === 0 ? 'stone3' : 'stone2');
+  p.vline(0, 0, d, 'stone0'), p.vline(w - 1, 0, d, 'stone0');
+  return { pix: p, ax: w / 2, ay: d / 2 };
 }
 
+/** 一个垂直车位的地面标线：宽 2.5 m、深 5 m。世界朝向下底线在西、车位口朝东 */
+function stall(): PropArt {
+  const w = 5 * PPM, d = 2.5 * PPM + 1;
+  const p = new Pix(w, d);
+  p.vline(0, 0, d, 'paint');
+  p.hline(0, 0, w - 2, 'paint'), p.hline(0, d - 1, w - 2, 'paint');
+  return { pix: p, ax: w / 2, ay: d / 2 };
+}
+
+/** 电动车充电桩：占地 0.6 m 见方、高 1.6 m，白色机身、绿色灯带，屏幕和充电枪朝世界西 */
+function evCharger(v: View): PropArt {
+  const s = Math.round(0.6 * PPM), h = Math.round(1.6 * PPM);
+  const p = new Pix(s + 8, s + h + 5);
+  const x0 = 2, ground = 2 + s + h;
+  const face = FACING[v];
+  p.rect(x0, ground - h, s, h, 'stone3');
+  p.vline(x0 + s - 1, ground - h, h, 'stone1');
+  p.rect(x0, ground - h - s, s, s, 'stone2');
+  p.rect(x0, ground - h + 2, s, 1, 'leaf2');
+  p.rect(x0, ground - 2, s, 2, 'slate');
+  if (face === 'W') p.rect(x0 + 1, ground - h + 4, s - 2, 3, 'glass0'), p.px(x0 + 2, ground - h + 8, 'ink');
+  // 侧面能看到挂在西侧的充电枪
+  if (face === 'S' || face === 'N') p.rect(face === 'S' ? x0 - 1 : x0 + s, ground - h + 6, 1, 3, 'ink');
+  p.outline('ink');
+  for (let y = ground - s; y < ground; y++) for (let x = x0 + s + 1; x < x0 + s + 5; x++) if (!p.opaque(x, y)) p.px(x, y, 'shadow', 60);
+  return { pix: p, ax: x0 + s / 2, ay: ground - s / 2 };
+}
+
+/** 小汽车的车漆：顶面、立面、暗部 */
+const CAR_PAINT: [PalKey, PalKey, PalKey][] = [
+  ['stone3', 'stone2', 'stone0'], // 白
+  ['grey3', 'grey2', 'grey0'], // 银
+  ['slate', 'glass0', 'ink'], // 黑
+  ['water1', 'water0', 'glass0'], // 蓝
+  ['flowerR', 'brick0', 'bronze0'], // 红
+];
+
+/**
+ * 普通轿车：长 4.6 m、宽 1.8 m，下半截车身高 0.75 m、缩进的座舱再高 0.6 m。
+ * head 是车头在屏幕上的朝向（0 上、1 右、2 下、3 左）；按 3/4 俯视画顶面和朝屏幕下方的立面
+ */
+function car(paint: number, head: number): PropArt {
+  const [top, side, dark] = CAR_PAINT[paint];
+  const L = Math.round(4.6 * PPM), Wd = Math.round(1.8 * PPM), HB = 6, HC = 5, Z = HB + HC;
+  const along = head % 2 === 0; // 车身沿屏幕竖向
+  const sw = along ? Wd : L, sd = along ? L : Wd;
+  const p = new Pix(sw + 7, sd + Z + 4);
+  const x0 = 1, gy = Z + 1; // 地面上占地矩形的左上角是 (x0, gy)
+  // 盒子：屏幕坐标里占地 [xa, xb) × [ya, yb)，高 [za, zb)
+  const box = (xa: number, xb: number, ya: number, yb: number, za: number, zb: number, t: PalKey, f: PalKey) => {
+    p.rect(x0 + xa, gy + ya - zb, xb - xa, yb - ya, t);
+    p.rect(x0 + xa, gy + yb - zb, xb - xa, zb - za, f);
+  };
+  // 座舱沿车长方向的范围（从车头量起），挡风玻璃在前、后窗在后
+  const c0 = Math.round(L * 0.3), c1 = Math.round(L * 0.78);
+  // 影子
+  for (let y = gy + 2; y < gy + sd + 2; y++) for (let x = x0 + 2; x < x0 + sw + 3; x++) p.px(x, y, 'shadow', 60);
+  // 车轮
+  if (along) for (const yy of [Math.round(L * 0.2), Math.round(L * 0.8)]) p.rect(x0, gy + yy - 2, sw, 4, 'ink');
+  else for (const xx of [Math.round(L * 0.2), Math.round(L * 0.8)]) p.rect(x0 + xx - 2, gy + sd - 3, 4, 3, 'ink');
+  box(0, sw, 0, sd, 1, HB, top, side);
+  if (along) {
+    const [ya, yb] = head === 0 ? [c0, c1] : [L - c1, L - c0];
+    box(1, sw - 1, ya, yb, HB, Z, top, 'glass0');
+    // 顶面上看得到斜挡风玻璃和后窗
+    const front = head === 0 ? ya : yb - 4, rear = head === 0 ? yb - 3 : ya;
+    p.rect(x0 + 1, gy + front - Z, sw - 2, 4, 'glass1');
+    p.hline(x0 + 2, gy + front - Z + (head === 0 ? 1 : 2), sw - 6, 'glass2');
+    p.rect(x0 + 1, gy + rear - Z, sw - 2, 3, 'glass0');
+    if (head === 2) p.px(x0 + 2, gy + yb - Z + 1, 'glass2'), p.px(x0 + 3, gy + yb - Z + 2, 'glass2');
+    // 立面：车头（大灯、格栅）或车尾（尾灯、牌照）
+    const fy = gy + sd - HB;
+    if (head === 2) {
+      p.rect(x0 + 1, fy + 1, 2, 2, 'flowerW'), p.rect(x0 + sw - 3, fy + 1, 2, 2, 'flowerW');
+      p.rect(x0 + 4, fy + 2, sw - 8, 2, 'slate');
+    } else {
+      p.rect(x0 + 1, fy + 1, 2, 1, 'flowerR'), p.rect(x0 + sw - 3, fy + 1, 2, 1, 'flowerR');
+      p.rect(x0 + sw / 2 - 2, fy + 3, 4, 1, 'water2');
+    }
+    p.hline(x0, gy + sd - 2, sw, dark);
+  } else {
+    const [xa, xb] = head === 3 ? [c0, c1] : [L - c1, L - c0];
+    box(xa, xb, 1, sd - 1, HB, Z, top, 'glass0');
+    // 顶面的挡风玻璃和后窗
+    const front = head === 3 ? xa : xb - 4, rear = head === 3 ? xb - 3 : xa;
+    p.rect(x0 + front, gy + 1 - Z, 4, sd - 2, 'glass1');
+    p.vline(x0 + front + (head === 3 ? 1 : 2), gy + 2 - Z, sd - 6, 'glass2');
+    p.rect(x0 + rear, gy + 1 - Z, 3, sd - 2, 'glass0');
+    // 侧窗：B 柱分成前后两扇，前后斜边用车漆削角
+    const wy = gy + sd - 1 - Z;
+    p.vline(x0 + Math.round((xa + xb) / 2), wy, HC, top);
+    p.px(x0 + (head === 3 ? xa : xb - 1), wy, top), p.px(x0 + (head === 3 ? xb - 1 : xa), wy, top);
+    p.px(x0 + xa + 2, wy + 1, 'glass2');
+    // 车门缝、前后灯
+    const fy = gy + sd - HB;
+    p.vline(x0 + Math.round((xa + xb) / 2), fy, HB - 1, dark);
+    p.hline(x0, gy + sd - 2, sw, dark);
+    p.rect(x0 + (head === 3 ? 0 : sw - 1), fy + 1, 1, 2, 'flowerW');
+    p.rect(x0 + (head === 3 ? sw - 1 : 0), fy + 1, 1, 2, 'flowerR');
+    // 车轮压在立面下沿
+    for (const xx of [Math.round(L * 0.2), Math.round(L * 0.8)]) p.rect(x0 + xx - 2, gy + sd - 3, 4, 3, 'ink'), p.px(x0 + xx - 1, gy + sd - 2, 'grey1');
+  }
+  p.outline('ink');
+  return { pix: p, ax: x0 + sw / 2, ay: gy + sd / 2 };
+}
+
+/** 物件图集的键：四个视角各画一张的物件叫「名字@N」等，地图里只写名字 */
 const PROPS: Record<string, PropArt> = {
-  pine: pine(),
-  tree: tree(),
-  'tree-pit': treePit(),
-  lamp: lamp(),
-  bench: bench(),
-  pylon: pylon('big'),
-  'pylon-plaque': pylon('plaque'),
-  'pylon-small': pylon('small'),
-  'motto-stone': mottoStone(),
   'big-book': sculpture(),
-  'energy-ball': sculpture(),
-  bust: bust(),
-  ding: ding(),
+  booth: booth(0),
 };
+for (const v of VIEWS) {
+  const k = (name: string) => `${name}@${VIEW_NAME[v]}`;
+  PROPS[k('pylon-west')] = pylon(true, v, true, 'E');
+  PROPS[k('pylon-east')] = pylon(true, v, false, 'W');
+  PROPS[k('pylon-small')] = pylon(false, v, false, null);
+  PROPS[k('fence-gate')] = fence(2.75, v);
+  PROPS[k('library-steps')] = rotCCW(librarySteps(), v);
+  PROPS[k('stall')] = rotCCW(stall(), v);
+  PROPS[k('ev-charger')] = evCharger(v);
+  // 车头朝北的车在各视角下屏幕上的车头朝向：上北朝上，上东朝左，上南朝下，上西朝右
+  CAR_PAINT.forEach((_, i) => (PROPS[`car-${i}@${VIEW_NAME[v]}`] = car(i, [0, 3, 2, 1][v])));
+}
+// art/props/ 里审核通过的手绘物件：同名 json 给锚点（底边中点）和屏幕上的占地，这里换成占地中心
+for (const f of readdirSync(new URL('../art/props/', import.meta.url)).filter((f) => f.endsWith('.png'))) {
+  const name = f.slice(0, -4);
+  const j = JSON.parse(readFileSync(new URL(`../art/props/${name}.json`, import.meta.url), 'utf8'));
+  const depth = (j.screen_footprint_m ?? j.footprint_m)[1] * PPM;
+  PROPS[name] = { pix: loadPix(new URL(`../art/props/${f}`, import.meta.url)), ax: j.ax, ay: Math.round(j.ay - depth / 2) };
+}
+// 树名里的数字是树冠半径（分米）
+TREES.forEach((name, i) => {
+  const R = Number(name.split('-')[1]) / 10;
+  PROPS[name] = name.startsWith('pine') ? conifer(R, 300 + i) : broadleaf(R, 300 + i);
+});
 
 {
-  // 简单的横向排布图集
-  const pad = 1;
-  const W = Object.values(PROPS).reduce((s, a) => s + a.pix.w + pad, 0);
-  const H = Math.max(...Object.values(PROPS).map((a) => a.pix.h));
-  const atlas = new Pix(W, H);
-  const meta: Record<string, { x: number; y: number; w: number; h: number; ax: number; ay: number }> = {};
-  let x = 0;
-  for (const [name, a] of Object.entries(PROPS)) {
-    atlas.blit(a.pix, x, 0);
-    meta[name] = { x, y: 0, w: a.pix.w, h: a.pix.h, ax: a.ax, ay: a.ay };
+  // 图集：按高度从高到低排成宽 1024 的若干行
+  const pad = 1, AW = 1024;
+  const items = Object.entries(PROPS).sort((a, b) => b[1].pix.h - a[1].pix.h);
+  const pos: [number, number][] = [];
+  let x = 0, y = 0, rowH = 0;
+  for (const [, a] of items) {
+    if (x + a.pix.w > AW) (x = 0), (y += rowH + pad), (rowH = 0);
+    pos.push([x, y]);
     x += a.pix.w + pad;
+    rowH = Math.max(rowH, a.pix.h);
   }
+  const atlas = new Pix(AW, y + rowH);
+  const meta: Record<string, { x: number; y: number; w: number; h: number; ax: number; ay: number }> = {};
+  items.forEach(([name, a], i) => {
+    atlas.blit(a.pix, pos[i][0], pos[i][1]);
+    meta[name] = { x: pos[i][0], y: pos[i][1], w: a.pix.w, h: a.pix.h, ax: a.ax, ay: a.ay };
+  });
   save(atlas, 'props.png');
   writeFileSync(out('props.json'), JSON.stringify(meta, null, 1));
 }
@@ -404,7 +616,9 @@ function emoteIcon(i: number, p: Pix, ox: number, oy: number): void {
 const map: TiledMap = JSON.parse(readFileSync(out('map.json'), 'utf8'));
 const objLayer = map.layers.find((l) => l.name === LAYER.objects);
 if (!objLayer || objLayer.type !== 'objectgroup') throw new Error('地图缺少 objects 图层，先跑 npm run map');
+// 先清空：拆掉或改了编号的楼不留旧图。只删文件、保留目录，开着的 Vite 才不会丢掉它
 mkdirSync(out('buildings'), { recursive: true });
+for (const f of readdirSync(out('buildings'))) rmSync(new URL(f, out('buildings/')));
 const buildingArt = new Map<string, Pix>();
 for (const o of objLayer.objects.filter((o) => o.type === 'building')) {
   const spec: BuildingSpec = {
@@ -414,9 +628,11 @@ for (const o of objLayer.objects.filter((o) => o.type === 'building')) {
     levels: prop(o, 'levels', '0'),
     top: prop(o, 'top', 0),
   };
-  const pix = drawBuilding(spec);
-  buildingArt.set(spec.sprite, pix);
-  save(pix, `buildings/${spec.sprite}.png`);
+  for (const v of VIEWS) {
+    const pix = drawBuilding(spec, v);
+    if (v === 0) buildingArt.set(spec.sprite, pix);
+    save(pix, `buildings/${spec.sprite}-${VIEW_NAME[v]}.png`);
+  }
 }
 
 // ---------- 调色板导出（给手绘用） ----------
@@ -425,6 +641,8 @@ for (const o of objLayer.objects.filter((o) => o.type === 'building')) {
   const gpl = ['GIMP Palette', 'Name: Pixel NEU', 'Columns: 8', '#'];
   for (const [name, v] of entries) gpl.push(`${(v >> 16) & 255} ${(v >> 8) & 255} ${v & 255}\t${name}`);
   writeFileSync(out('palette.gpl'), gpl.join('\n') + '\n');
+  // 公开美术仓库（art/ 子模块）里放同一份，投稿人用它
+  writeFileSync(new URL('../art/palette.gpl', import.meta.url), gpl.join('\n') + '\n');
   const sw = new Pix(8 * 8, Math.ceil(entries.length / 8) * 8);
   entries.forEach(([, v], i) => sw.rect((i % 8) * 8, Math.floor(i / 8) * 8, 8, 8, v));
   save(sw, 'palette.png');
@@ -446,7 +664,8 @@ for (const o of objLayer.objects.filter((o) => o.type === 'building')) {
       const pix = buildingArt.get(prop(o, 'sprite', ''))!;
       draws.push({ y: o.y + o.height, fn: () => pv.blit(pix, o.x, o.y - prop(o, 'top', 0)) });
     } else if (o.type === 'prop') {
-      const a = PROPS[prop(o, 'sprite', '')];
+      const name = prop(o, 'sprite', '');
+      const a = PROPS[name] ?? PROPS[`${name}@${VIEW_NAME[(4 - prop(o, 'rot', 0)) % 4]}`];
       if (a) draws.push({ y: o.y, fn: () => pv.blit(a.pix, o.x - a.ax, o.y - a.ay) });
     }
   }

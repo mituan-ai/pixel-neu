@@ -1,11 +1,13 @@
 // 客户端、服务端、工具共用的世界常量与地图读取。改这里的数会同时影响三方，改前看 AGENTS.md。
 
-/** 一格的像素边长；一格 = METERS_PER_TILE 米（全图统一比例，不压缩距离） */
+/** 一格的像素边长；一格 = METERS_PER_TILE 米，即 1 m = 8 px。地面和楼高同一比例 */
 export const TILE = 16;
 export const METERS_PER_TILE = 2;
 
-/** 步行速度（像素/秒）。真实步速太慢不好玩，这里约 5 格/秒 */
+/** 步行速度（像素/秒）：约 10 m/s，北门走到图书馆半分钟出头 */
 export const WALK_SPEED = 80;
+/** 开发者模式按住 Shift 的加速倍数：客户端只在 Vite 开发时启用，服务端只在带 --dev 启动时放行 */
+export const DEV_BOOST = 5;
 
 /** 角色脚下的碰撞盒（像素，以脚底中心为原点） */
 export const FOOT = { w: 10, h: 6 };
@@ -36,6 +38,8 @@ export interface TiledObject {
   width: number;
   height: number;
   point?: boolean;
+  /** 折线各点，相对 (x, y) */
+  polyline?: { x: number; y: number }[];
   properties?: TiledProperty[];
 }
 export type TiledLayer =
@@ -123,6 +127,15 @@ export class Walkable {
       k = far + 1;
     }
     return out;
+  }
+
+  /**
+   * 服务端校验用：两次上报之间能不能走过去。客户端贴墙时按轴分开滑动，
+   * 所以直线、先横后竖、先竖后横三条路有一条走得通就算合法
+   */
+  reachable(a: { x: number; y: number }, b: { x: number; y: number }): boolean {
+    const h = { x: b.x, y: a.y }, v = { x: a.x, y: b.y };
+    return this.clear(a, b) || (this.clear(a, h) && this.clear(h, b)) || (this.clear(a, v) && this.clear(v, b));
   }
 
   /** 两点之间直线走，碰撞盒会不会碰到障碍（每 2 像素采样一次） */

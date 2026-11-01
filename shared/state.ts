@@ -10,6 +10,9 @@ export const Player = schema(
     hairColor: t.uint8(),
     top: t.uint8(),
     bottom: t.uint8(),
+    body: t.uint8(),
+    topStyle: t.uint8(),
+    bottomStyle: t.uint8(),
     /** 脚底的世界坐标（像素） */
     x: t.float32(),
     y: t.float32(),

@@ -5,10 +5,13 @@ export const ROOM_NAME = 'campus';
 /** 一个“平行校园”的人数上限，满了自动开新房间 */
 export const ROOM_MAX = 40;
 
+export const BODY = ['男', '女'];
 export const SKIN = [0xf5d2b0, 0xe8b48c, 0xc98e63, 0x8f5b3c];
-export const HAIR_STYLE = ['短发', '中分', '马尾', '长发', '寸头'];
-export const HAIR_COLOR = [0x2b2430, 0x5b3a29, 0x9a6a3c, 0xd9c08a, 0x8a8f99, 0x7a3b46];
+export const HAIR_STYLE = ['短发', '寸头', '中分', '刺猬头', '中长发', '马尾', '侧马尾', '麻花辫', '侧编辫', '卷发', '爆炸头'];
+export const HAIR_COLOR = [0x3a3340, 0x5b3a29, 0x9a6a3c, 0xd9c08a, 0x8a8f99, 0x7a3b46];
+export const TOP_STYLE = ['T恤', '长袖', 'Polo衫'];
 export const TOP_COLOR = [0xe9edf2, 0x3d5a9e, 0xc0463e, 0x4e8a52, 0xe0b040, 0x2d2f3a, 0x8a5cb8, 0xe58aa8];
+export const BOTTOM_STYLE = ['长裤', '短裤', '裙子'];
 export const BOTTOM_COLOR = [0x2f3b55, 0x4a4f5c, 0x6b5a46, 0xb9a98a, 0x1f2128];
 
 export interface Look {
@@ -17,20 +20,50 @@ export interface Look {
   hairColor: number;
   top: number;
   bottom: number;
+  body: number;
+  topStyle: number;
+  bottomStyle: number;
 }
 
-export const DEFAULT_LOOK: Look = { skin: 0, hair: 0, hairColor: 0, top: 1, bottom: 0 };
+export const DEFAULT_LOOK: Look = { skin: 0, hair: 0, hairColor: 0, top: 1, bottom: 0, body: 0, topStyle: 0, bottomStyle: 0 };
 
 /**
- * 角色精灵表 assets/avatar.png 的布局：一帧 16×24，脚底在底边中点；
- * 每列一帧（0 站立、1 迈左脚、2 迈右脚），每行 = 部件起始行 + 朝向（头发再按发型每 4 行一组）。
+ * 角色精灵表 assets/avatar.png（Q 版 24×32 部件，见 art/chibi/）：一帧 24×32，脚底在第 30 行，按 1 倍显示。
+ * 每个部件变体占一「块」：4 行（下、左、右、上）× 3 帧（1 站立，0、2 迈步）。块从上往下排满 rowsPerColumn 行就换下一列
  */
-export const AVATAR = {
-  w: 16,
-  h: 24,
-  frames: 3,
-  rows: { skin: 0, bottom: 4, top: 8, detail: 12, hair: 16 },
+export const AVATAR = { w: 24, h: 32, frames: 3, scale: 1, footY: 30, idle: 1, columns: 4, rowsPerColumn: 32 } as const;
+
+/** 各部件的起始块号：身体（含头）、鞋、眼睛按体型，衣服按款式 × 体型，头发每种发型一块 */
+export const AVATAR_BLOCK = {
+  body: 0,
+  feet: 2,
+  eyes: 4,
+  legs: 6,
+  torso: 6 + BOTTOM_STYLE.length * 2,
+  hair: 6 + (BOTTOM_STYLE.length + TOP_STYLE.length) * 2,
 } as const;
+
+type Tint = 'skin' | 'hair' | 'top' | 'bottom';
+/** 从下往上叠的部件：取哪一块，染什么颜色（不染的保留原色） */
+export const AVATAR_PARTS: { block: (l: Look) => number; tint?: Tint }[] = [
+  { block: (l) => AVATAR_BLOCK.body + l.body, tint: 'skin' },
+  { block: (l) => AVATAR_BLOCK.feet + l.body },
+  { block: (l) => AVATAR_BLOCK.legs + l.bottomStyle * 2 + l.body, tint: 'bottom' },
+  { block: (l) => AVATAR_BLOCK.torso + l.topStyle * 2 + l.body, tint: 'top' },
+  { block: (l) => AVATAR_BLOCK.eyes + l.body },
+  { block: (l) => AVATAR_BLOCK.hair + l.hair, tint: 'hair' },
+];
+
+export function tintOf(l: Look, t: Tint): number {
+  return t === 'skin' ? SKIN[l.skin] : t === 'hair' ? HAIR_COLOR[l.hairColor] : t === 'top' ? TOP_COLOR[l.top] : BOTTOM_COLOR[l.bottom];
+}
+
+/** 第 block 块、朝向 dir、第 f 帧在 avatar.png 里的帧号（按 w×h 切格，从左到右、从上到下数） */
+export function avatarFrame(block: number, dir: number, f: number): number {
+  const line = block * 4 + dir;
+  const col = Math.floor(line / AVATAR.rowsPerColumn), row = line % AVATAR.rowsPerColumn;
+  return row * AVATAR.columns * AVATAR.frames + col * AVATAR.frames + f;
+}
 
 const clampIndex = (v: unknown, n: number) => (Number.isInteger(v) && (v as number) >= 0 && (v as number) < n ? (v as number) : 0);
 
@@ -42,6 +75,9 @@ export function cleanLook(raw: Partial<Look> | undefined): Look {
     hairColor: clampIndex(r.hairColor, HAIR_COLOR.length),
     top: clampIndex(r.top, TOP_COLOR.length),
     bottom: clampIndex(r.bottom, BOTTOM_COLOR.length),
+    body: clampIndex(r.body, BODY.length),
+    topStyle: clampIndex(r.topStyle, TOP_STYLE.length),
+    bottomStyle: clampIndex(r.bottomStyle, BOTTOM_STYLE.length),
   };
 }
 

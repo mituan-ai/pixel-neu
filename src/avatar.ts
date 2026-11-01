@@ -1,25 +1,25 @@
 // 一个角色：分层精灵（皮肤、下装、上衣、细节、头发）叠在一个容器里，按脚底 y 排深度。
 // 自己的角色多一层半透明“幽灵”画在最上面：被楼或树挡住时仍能看到轮廓；没被挡时与本体重合，看不出来。
 import Phaser from 'phaser';
-import { AVATAR, BOTTOM_COLOR, HAIR_COLOR, SKIN, TOP_COLOR, type Look } from '../shared/social.ts';
+import { AVATAR, AVATAR_PARTS, avatarFrame, tintOf, type Look } from '../shared/social.ts';
 
-const WALK_CYCLE = [0, 1, 0, 2];
-const WALK_FPS = 8;
+/** 三帧走路：左脚、站立、右脚、站立 */
+const WALK_CYCLE = [0, 1, 2, 1];
+const WALK_FPS = 7;
 /** 幽灵层的深度：高于一切世界物体 */
 export const GHOST_DEPTH = 1e6;
 
-type Part = { row: (look: Look, dir: number) => number; tint?: (look: Look) => number };
-const PARTS: Part[] = [
-  { row: (_l, d) => AVATAR.rows.skin + d, tint: (l) => SKIN[l.skin] },
-  { row: (_l, d) => AVATAR.rows.bottom + d, tint: (l) => BOTTOM_COLOR[l.bottom] },
-  { row: (_l, d) => AVATAR.rows.top + d, tint: (l) => TOP_COLOR[l.top] },
-  { row: (_l, d) => AVATAR.rows.detail + d },
-  { row: (l, d) => AVATAR.rows.hair + l.hair * 4 + d, tint: (l) => HAIR_COLOR[l.hairColor] },
-];
+/** 世界坐标、世界朝向 → 当前视角下的显示位置和朝向；场景切换视角时替换 */
+export const display = {
+  at: (x: number, y: number) => ({ x, y }),
+  dir: (d: number) => d,
+};
 
 export class Avatar {
+  /** 世界坐标（脚底） */
   x: number;
   y: number;
+  /** 世界朝向 */
   dir = 3;
   moving = false;
   private look: Look;
@@ -34,7 +34,7 @@ export class Avatar {
     const make = () => {
       const c = scene.add.container(x, y);
       c.add(scene.add.image(0, 0, 'foot-shadow').setOrigin(0.5, 0.5));
-      for (let i = 0; i < PARTS.length; i++) c.add(scene.add.sprite(0, 0, 'avatar', 0).setOrigin(0.5, 1));
+      for (let i = 0; i < AVATAR_PARTS.length; i++) c.add(scene.add.sprite(0, 0, 'avatar', 0).setOrigin(0.5, AVATAR.footY / AVATAR.h).setScale(AVATAR.scale));
       layer.add(c);
       return c;
     };
@@ -47,9 +47,9 @@ export class Avatar {
   setLook(look: Look): void {
     this.look = look;
     for (const c of this.containers())
-      PARTS.forEach((p, i) => {
+      AVATAR_PARTS.forEach((p, i) => {
         const s = c.list[i + 1] as Phaser.GameObjects.Sprite;
-        if (p.tint) s.setTint(p.tint(look));
+        if (p.tint) s.setTint(tintOf(look, p.tint));
         else s.clearTint();
       });
     this.applyFrame();
@@ -58,8 +58,15 @@ export class Avatar {
   place(x: number, y: number): void {
     this.x = x;
     this.y = y;
-    this.body.setPosition(x, y).setDepth(y);
-    this.ghost?.setPosition(x, y);
+    const s = display.at(x, y);
+    this.body.setPosition(s.x, s.y).setDepth(s.y);
+    this.ghost?.setPosition(s.x, s.y);
+  }
+
+  /** 视角变了：重新摆位置、换朝向帧 */
+  redraw(): void {
+    this.place(this.x, this.y);
+    this.applyFrame();
   }
 
   update(dt: number): void {
@@ -76,8 +83,8 @@ export class Avatar {
   }
 
   private applyFrame(): void {
-    const col = this.moving ? WALK_CYCLE[Math.floor(this.animT * WALK_FPS) % WALK_CYCLE.length] : 0;
+    const col = this.moving ? WALK_CYCLE[Math.floor(this.animT * WALK_FPS) % WALK_CYCLE.length] : AVATAR.idle;
     for (const c of this.containers())
-      PARTS.forEach((p, i) => (c.list[i + 1] as Phaser.GameObjects.Sprite).setFrame(p.row(this.look, this.dir) * AVATAR.frames + col));
+      AVATAR_PARTS.forEach((p, i) => (c.list[i + 1] as Phaser.GameObjects.Sprite).setFrame(avatarFrame(p.block(this.look), display.dir(this.dir), col)));
   }
 }

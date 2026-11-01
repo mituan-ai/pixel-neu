@@ -1,5 +1,12 @@
 node_modules/
 dist/
+dist-server/
 data/preview.png
 *.log
 .playwright-cli/
+data/sat-*.png
+data/check*.png
+.env.local
+data/ref/
+art-inbox/*
+!art-inbox/AGENTS.md

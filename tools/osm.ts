@@ -1,11 +1,14 @@
 // 从 OpenStreetMap（Overpass API）抓取校园一片区域的原始数据，存到 data/osm.json。
 // 数据以 ODbL 授权，使用时须署名 “© OpenStreetMap contributors”（见 docs/sources.md）。
-// 用法：npm run osm            扩展到新区域时先改 BBOX，再重新生成地图（npm run map）
+// 用法：npm run osm            范围取 geo.ts 的 EXTENT 四角外扩 20 m；扩图时改 EXTENT，再重新生成地图（npm run map）
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
+import { EXTENT, toLatLon, type P } from './geo.ts';
 
-/** 南湖校区北部：北门 — 信息学馆 — 宁恩承图书馆 — 汉卿北路（南, 西, 北, 东） */
-const BBOX = [41.762, 123.408, 41.769, 123.419];
+/** 地图四角的经纬度外接框（南, 西, 北, 东） */
+const corners = ([[EXTENT.x0 - 20, EXTENT.y0 - 20], [EXTENT.x1 + 20, EXTENT.y0 - 20], [EXTENT.x0 - 20, EXTENT.y1 + 20], [EXTENT.x1 + 20, EXTENT.y1 + 20]] as P[]).map(toLatLon);
+const r6 = (v: number) => Math.round(v * 1e6) / 1e6;
+const BBOX = [Math.min(...corners.map((c) => c[0])), Math.min(...corners.map((c) => c[1])), Math.max(...corners.map((c) => c[0])), Math.max(...corners.map((c) => c[1]))].map(r6);
 const ENDPOINT = 'https://overpass-api.de/api/interpreter';
 
 const query = `[out:json][timeout:90];(nwr(${BBOX.join(',')}););out geom;`;

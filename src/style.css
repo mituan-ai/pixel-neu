@@ -109,8 +109,8 @@ button:disabled {
 }
 
 .preview {
-  width: 80px;
-  height: 120px;
+  width: 96px;
+  height: 128px;
   flex: none;
   image-rendering: pixelated;
   background: #cfe3c0;
@@ -142,7 +142,7 @@ button:disabled {
 
 .pick-label {
   flex: none;
-  width: 28px;
+  width: 42px;
 }
 
 .pick-opts {
@@ -191,7 +191,16 @@ button:disabled {
   text-align: center;
 }
 
-/* 游戏中 */
+/* 游戏中：面板统一是纸色底、墨色描边、下沉阴影 */
+.hud-top,
+.dock,
+.help,
+.card,
+.bar {
+  border: 2px solid var(--ink);
+  box-shadow: 0 4px 0 var(--shadow);
+}
+
 .hud-top {
   position: absolute;
   left: 16px;
@@ -199,12 +208,27 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  text-shadow: 0 1px 0 var(--ink), 1px 0 0 var(--ink), -1px 0 0 var(--ink), 0 -1px 0 var(--ink);
+  padding: 6px 10px;
+  background: var(--paper);
+  color: var(--ink);
   pointer-events: none !important;
 }
 
 .place {
   font-size: 16px;
+  color: var(--brick);
+}
+
+.count {
+  color: var(--sky);
+}
+
+.dev-badge {
+  margin-top: 2px;
+  padding: 1px 6px;
+  background: var(--gold);
+  color: var(--ink);
+  width: fit-content;
 }
 
 /* 底部居中的面板用 margin 居中，宽度随内容 */
@@ -218,8 +242,7 @@ button:disabled {
   display: flex;
   gap: 6px;
   padding: 6px;
-  background: var(--shadow);
-  border: 2px solid var(--ink);
+  background: var(--paper);
 }
 
 .emote {
@@ -227,10 +250,17 @@ button:disabled {
   height: 40px;
   padding: 0;
   background: 0 0 / auto 36px no-repeat;
-  background-color: var(--paper);
+  background-color: #fff;
   background-origin: content-box;
   border-width: 2px;
   image-rendering: pixelated;
+}
+
+.emote:hover,
+.icon-btn:hover:not(:disabled),
+.phrase:hover,
+.atlas-item:hover {
+  background-color: var(--gold);
 }
 
 .say {
@@ -250,6 +280,7 @@ button:disabled {
   padding: 8px;
   background: var(--paper);
   border: 2px solid var(--ink);
+  box-shadow: 0 4px 0 var(--shadow);
   max-width: calc(100vw - 32px);
 }
 
@@ -266,8 +297,6 @@ button:disabled {
   width: min(300px, calc(100vw - 32px));
   background: var(--paper);
   color: var(--ink);
-  border: 2px solid var(--ink);
-  box-shadow: 0 4px 0 var(--shadow);
   padding: 10px 12px;
   pointer-events: none !important;
 }
@@ -289,15 +318,222 @@ button:disabled {
   color: #8a8478;
 }
 
-.minimap {
+/* 右上：小地图 + 工具按钮 */
+.dock {
   position: absolute;
   right: 16px;
   top: 12px;
-  width: 102px;
-  height: 183px;
-  image-rendering: pixelated;
+  padding: 6px;
+  background: var(--paper);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.minimap-box {
+  position: relative;
+  width: 164px;
+  height: 164px;
+  overflow: hidden;
   border: 2px solid var(--ink);
   background: var(--ink);
+  cursor: zoom-in;
+}
+
+.minimap {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  transition: transform 0.2s;
+}
+
+/* 「北」字贴在小地图北边的中点，随视角转到对应的一边 */
+.north {
+  position: absolute;
+  left: 50%;
+  top: 2px;
+  transform: translateX(-50%);
+  padding: 0 3px;
+  background: var(--ink);
+  color: var(--gold);
+  line-height: 14px;
+  pointer-events: none;
+  transition: all 0.2s;
+}
+
+.north[data-view='1'] {
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.north[data-view='2'] {
+  top: auto;
+  bottom: 2px;
+}
+
+.north[data-view='3'] {
+  left: auto;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.tools {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  width: 164px;
+}
+
+.icon-btn {
+  height: 24px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  background: #fff;
+  box-shadow: 0 2px 0 var(--ink);
+}
+
+.zoom-label:disabled {
+  opacity: 1;
+  background: var(--stone);
+  font-size: 12px;
+}
+
+/* 操作说明 */
+.help {
+  position: absolute;
+  right: 16px;
+  top: 232px;
+  width: 220px;
+  padding: 8px 10px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.help-title {
+  color: var(--brick);
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.help-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  line-height: 1.7;
+}
+
+.help-key {
+  color: var(--sky);
+  white-space: nowrap;
+}
+
+.help-what {
+  text-align: right;
+}
+
+.help-close {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  width: 22px;
+  height: 20px;
+  font-size: 12px;
+  box-shadow: none;
+}
+
+/* 全图 */
+.atlas {
+  position: absolute;
+  inset: 0;
+  background: rgba(29, 24, 36, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.atlas-frame {
+  width: 100%;
+  height: 100%;
+  max-width: 1280px;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  color: var(--ink);
+  border: 3px solid var(--ink);
+  box-shadow: 0 6px 0 var(--shadow);
+}
+
+.atlas-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--ink);
+}
+
+.atlas-title {
+  font-size: 18px;
+  color: var(--brick);
+  white-space: nowrap;
+}
+
+.atlas-hint {
+  flex: 1;
+  color: #8a8478;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.atlas-tools {
+  display: flex;
+  gap: 4px;
+}
+
+.atlas-tools .icon-btn {
+  width: 30px;
+  height: 28px;
+}
+
+.atlas-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.atlas-map {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none;
+  image-rendering: pixelated;
+}
+
+.atlas-list {
+  width: 150px;
+  flex: none;
+  overflow: auto;
+  border-left: 2px solid var(--ink);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.atlas-list-title {
+  color: var(--sky);
+  margin-bottom: 2px;
+}
+
+.atlas-item {
+  text-align: left;
+  background: #fff;
+  box-shadow: none;
 }
 
 .attribution {
@@ -305,19 +541,21 @@ button:disabled {
   right: 8px;
   bottom: 4px;
   font-size: 12px;
-  color: rgba(244, 242, 236, 0.75);
-  text-shadow: 0 1px 0 var(--ink);
+  color: rgba(244, 242, 236, 0.85);
+  text-shadow: 0 1px 0 var(--ink), 1px 0 0 var(--ink), -1px 0 0 var(--ink);
   pointer-events: none !important;
 }
 
 .toast {
   position: absolute;
   left: 50%;
-  top: 48px;
+  top: 16px;
   transform: translateX(-50%);
   background: var(--ink);
-  border: 2px solid var(--paper);
+  border: 2px solid var(--gold);
+  box-shadow: 0 4px 0 var(--shadow);
   padding: 6px 12px;
+  white-space: nowrap;
 }
 
 @media (max-width: 560px) {
@@ -327,6 +565,14 @@ button:disabled {
   }
   .join-form {
     width: 100%;
+  }
+  .hud-top {
+    left: 8px;
+    top: 8px;
+    padding: 4px 8px;
+  }
+  .place {
+    font-size: 13px;
   }
   .bar {
     bottom: 24px;
@@ -345,9 +591,49 @@ button:disabled {
   .card {
     bottom: 128px;
   }
-  .minimap {
-    width: 68px;
-    height: 122px;
+  .dock {
+    right: 8px;
+    top: 8px;
+    padding: 4px;
+  }
+  .minimap-box {
+    width: 112px;
+    height: 112px;
+  }
+  .tools {
+    width: 112px;
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .help {
+    right: 8px;
+    top: auto;
+    bottom: 120px;
+  }
+  .toast {
+    top: auto;
+    bottom: 120px;
+  }
+  .atlas {
+    padding: 8px;
+  }
+  .atlas-hint {
+    display: none;
+  }
+  .atlas-body {
+    flex-direction: column;
+  }
+  .atlas-list {
+    width: auto;
+    flex-direction: row;
+    overflow-x: auto;
+    border-left: none;
+    border-top: 2px solid var(--ink);
+  }
+  .atlas-list-title {
+    display: none;
+  }
+  .atlas-item {
+    white-space: nowrap;
   }
   .attribution {
     bottom: 2px;

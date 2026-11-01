@@ -40,7 +40,13 @@ async function boot(): Promise<void> {
     const net = await Net.join(name, look, scene.handlers);
     roomId = net.roomId;
     scene.attach(net);
-    hud = showHud(ui, { emote: (i) => net.emote(i), say: (i) => net.say(i) }, { size: scene.mapSize, dots: () => scene.dots() });
+    hud = showHud(
+      ui,
+      { emote: (i) => net.emote(i), say: (i) => net.say(i), rotate: (step) => scene.rotate(step), zoom: (step) => scene.zoomBy(step), walkTo: (x, y) => scene.walkTo(x, y) },
+      { size: scene.mapSize, zoom: scene.zoom, landmarks: scene.landmarks, dots: () => scene.dots(), destination: () => scene.destination() },
+    );
+    scene.onView = (v) => hud?.setView(v);
+    scene.onZoom = (z) => hud?.setZoom(z);
     hud.setCount(Math.max(1, scene.dots().length), roomId);
   });
 }

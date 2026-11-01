@@ -1,67 +1,79 @@
 # AGENTS.md
 
-像素东大 · Pixel NEU：东北大学南湖校区的像素风多人校园漫游。浏览器里打开就能玩，玩家在校园里走动、碰面，用表情和预设短语打招呼。谜团 mituan 开发，非官方作品。
+像素东大 · Pixel NEU：东北大学南湖校区的像素风多人校园漫游。谜团 mituan 开发，非官方作品。
 
-## 最重要的规则：真实，不编造
+## 真实性
 
-- 校园布局只能来自可查证的资料：OpenStreetMap、卫星图、公开的校园平面图和照片。不做实地测绘，也不凭印象画。
-- 资料里查不到的东西，不画、不起名、不写介绍。宁可留白或用中性占位，也不编一栋楼、一个名字或一段校史。
-- 为了好玩补充的细节（铺装纹理、草坪、树、路灯、长椅）在代码里标 `DESIGN`，并写明依据。它们不能改变楼、路、门、纪念物的位置。
-- 地点介绍（POI）的每句话都要有来源，来源编号登记在 [docs/sources.md](docs/sources.md)。新增来源先登记，再引用。
-- 拿不准的条目写进 [docs/design.md](docs/design.md) 的「待核实」，不要悄悄猜一个。
+- 楼、路、路宽、铺装、草地、树、门、纪念物，位置和尺寸都按 [docs/sources.md](docs/sources.md) 登记的资料：OSM 定楼和路网，卫星图定路宽、地面和树，照片定立面和层数。
+- 资料里没有的不画、不起名、不写介绍。某一面立面没有资料，就画中性立面。
+- 地标介绍每句话都要标来源编号；新来源先登记再引用。拿不准的写进 sources.md 的「待核实」。
+- 照片和卫星图只作参考，不进仓库，也不在游戏里展示。
 
-## 目录（保持扁平，不要再往下分层）
+## 比例与方向
+
+- 全图按真实尺寸，1 m = 8 px：1 格 = 2 m = 16 px，楼高同一比例（一层 30 px）。人物是 Q 版 24×32 帧（`art/chibi/`），按 1 倍显示，全身约 26 px，桌面 2 倍缩放时像素 1:1。
+- 显示用整数倍缩放：桌面默认 2 倍，手机默认 1 倍。
+- 世界坐标上北（路网转正 3.85°）。客户端可以切四个视角，但旋转只发生在显示层；服务端、碰撞、寻路和网络同步一律用世界坐标、世界方向。
+- 全图固定上北，小地图跟随当前视角旋转。
+- 世界常量只在 `shared/world.ts` 定义。
+- 世界米坐标的原点固定（`tools/geo.ts` 的 ORIGIN），扩图只改 EXTENT，扩出去的地方坐标可以是负数。survey.json 和文档里的坐标永远不用迁移。
+- 楼基以卫星图上的墙脚为准，不能直接用 OSM 轮廓：斜拍的楼顶会偏，楼越高偏得越多。每栋楼都要在 survey.json 里写 shift、lean 或确认无偏移，量法见 `tools/survey.ts`。
+
+## 目录
 
 ```
-assets/   运行时资源，Vite 的 publicDir。美术规范见 assets/AGENTS.md
-data/     原始资料：osm.json（Overpass 抓取，ODbL）。preview.png 是生成的全图预览，不进仓库
-docs/     design.md（投影、比例、设计取舍、待核实、扩展指南）、sources.md（资料来源登记）
-server/   Colyseus 服务端：main.ts 启动，room.ts 房间逻辑
-shared/   前后端和工具共用：world.ts（比例、碰撞、寻路）、social.ts（外观、表情、短语）、state.ts（同步状态）
-src/      浏览器端：main.ts 入口，scene.ts 场景，avatar.ts 角色，net.ts 联机，ui.ts 界面，style.css
+art/      公开美术仓库 mituan-ai/pixel-neu-art 的 git 子模块：物件 props/、立面 facades/、Q 版角色底模和发型 chibi/。npm run art 读它们生成 assets/；投稿规范见 art/CONTRIBUTING.md
+art-inbox/ 美术草稿与第三方候选素材，审核通过的移到 art/；约束见 art-inbox/AGENTS.md，除该文件外不进仓库
+assets/   运行时资源（Vite publicDir），美术约束见 assets/AGENTS.md
+data/     原始资料：osm.json（OSM）、survey.json（从卫星图描的地面、树、楼基校正）；sat-*.png、check.png、ref/（照片和视频截图）是本地参考，不进仓库
+docs/     sources.md：资料来源与待核实；refs/：各区域参考资料的文字索引；codex/：给 Codex 的通用提示词和任务单
+server/   Colyseus 服务端
+shared/   前后端和工具共用：world.ts、social.ts、state.ts、view.ts（四视角换算）
+src/      浏览器端
 tests/    Vitest
-tools/    生成器：osm.ts 抓数据，map.ts 生成地图，art*.ts 生成美术，pix.ts / palette.ts 是画布和调色板
+tools/    数据抓取与地图、美术生成器
 ```
 
-新文件先想能不能放进现有目录。只有现有目录都不合适时才新建，并在这里登记。
+新增目录要在这里登记。
 
-## 常用命令
+## 命令
 
 ```
-npm run dev        前端开发服务器（Vite，/colyseus 代理到 2567）
-npm run server     服务端（node 直接跑 TS，改代码自动重启）
+git submodule update --init   拉 art/ 子模块（新克隆时）
+npm run dev        前端（Vite，/colyseus 代理到 2567）
+npm run server     服务端（带 --dev：放行开发者模式的 Shift 5 倍速；线上用 npm start，不放行）
 npm test           测试
 npm run typecheck  类型检查
-npm run build      类型检查 + 打包到 dist/
-npm run osm        重新抓 OSM 数据到 data/osm.json（走 curl，遵循 https_proxy）
-npm run map        data/osm.json → assets/map.json
-npm run art        生成美术到 assets/，并输出 data/preview.png
+npm run osm        重新抓 OSM 到 data/osm.json
+npm run sat        抓卫星图到 data/sat-<来源>.png（-- 来源，见 tools/geo.ts）
+npm run check      对照图 data/check.png（-- [来源] x0 y0 x1 y1 每米像素）
+npm run map        生成 assets/map.json
+npm run art        生成美术，并输出 data/preview.png
 ```
 
-改了地图或美术生成器后，依次跑 `npm run map && npm run art && npm test`，看一眼 `data/preview.png`。服务端启动时读 `assets/map.json`，地图变了要重启服务端。
+改了地图或美术生成器：`npm run map && npm run art && npm test`，看 `data/preview.png`，再重启服务端（它启动时读 map.json）。
 
 ## 技术约定
 
-- Phaser 4（WebGL、`pixelArt`、`roundPixels`），Colyseus 0.18（`@colyseus/core` + `@colyseus/sdk`），TypeScript 7，Vite 8，Vitest 5。
-- Node 22.18+ 直接运行 `.ts`（类型擦除）：不能用 enum、namespace、参数属性（`constructor(private x)`）、装饰器。Schema 用 `schema()` + `t` 写法。
-- 导入写 `.ts` 后缀，类型导入用 `import type`。
-- 世界常量（格子大小、比例、步速、碰撞盒、图层名）只在 `shared/world.ts` 定义，客户端、服务端、工具都从这里取。
-- 服务端是位置的权威：校验速度和碰撞，不合理就发 `snap` 拉回。客户端只做预测。
-- 地图是生成产物。不要手改 `assets/map.json`，改 `tools/map.ts` 再重新生成。
+- Phaser 4、Colyseus 0.18、TypeScript 7、Vite 8、Vitest 5。
+- Node 22.18+ 直接跑 `.ts`（类型擦除）：不能用 enum、namespace、参数属性、装饰器。Schema 用 `schema()` + `t`。导入写 `.ts` 后缀，类型导入用 `import type`。
+- 服务端是位置的权威：沿移动路径校验速度和碰撞，不合理就发 `snap`。客户端只做预测。
+- `assets/map.json` 是生成产物，改 `tools/` 再重新生成。
 
-## 社交与安全
+## 社交
 
-- 只有预设短语和表情，没有自由文本聊天。新增短语追加到 `shared/social.ts` 的数组末尾，不要插入或删除中间项，因为序号就是网络协议。
-- 昵称经过 `cleanName` 清洗（去控制字符、限长）。不收集任何个人信息，不需要登录。
-- 单个房间上限 40 人，满了 `joinOrCreate` 会自动开新房间（界面上叫「平行校园」）。
+- 只有预设短语和表情，没有自由文本。`shared/social.ts` 里的短语、表情只能追加到末尾：序号就是网络协议。
+- 昵称经过 `cleanName`。不收集个人信息，不需要登录。
+- 单房间上限 40 人，满了自动开新房间。
 
 ## 署名与许可
 
-- 作品署名「谜团 mituan」，界面和文档都写明「非官方作品」。可以使用「东北大学」校名描述地点，但不使用校徽或学校官方标识，也不暗示学校授权。
-- 地图数据 © OpenStreetMap 贡献者（ODbL），界面右下角必须保留署名。
-- 字体 Fusion Pixel（OFL-1.1），许可证随字体放在 `assets/fonts/`。
-- 校园照片只作为画图参考，不放进仓库，也不在游戏里展示。
+- 本仓库（代码、`tools/` 生成的美术、`data/survey.json`）© 谜团 mituan，保留所有权利（`package.json` 为 `UNLICENSED`），仓库不公开。
+- `art/` 子模块是公开仓库：原创素材按 CC-BY 4.0 发布，`art/chibi/` 的第三方部件是 CC0。只把别人能贡献的源文件放进去；代码、survey.json、`data/`、`art-inbox/` 草稿和参考照片都不进公开仓库。
+- 改 `art/` 先在子模块里提交、推送公开仓库，再在本仓库提交子模块指针。
+- 第三方素材只用 CC0、CC-BY、OGA-BY、CC-BY-SA 授权的，逐件登记到 `assets/CREDITS.md`。CC-BY-SA 素材及其改作按 CC-BY-SA 发布，不在保留权利范围内。
+- 界面写明「非官方作品」，右下角保留「© OpenStreetMap 贡献者」。不用校徽和学校官方标识，不暗示学校授权。
 
 ## 提交前
 
-`npm run typecheck && npm test`，涉及画面的改动在浏览器里实际走一遍。提交信息用中文，说清楚改了什么、为什么。
+`npm run typecheck && npm test`，涉及画面的改动在浏览器里实际走一遍。提交信息用中文。

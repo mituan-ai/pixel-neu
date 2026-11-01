@@ -1,6 +1,6 @@
 // 生成美术用的像素画布：只在 Node 里跑，画完存 PNG（不依赖第三方库）。
-import { writeFileSync } from 'node:fs';
-import { deflateSync } from 'node:zlib';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { deflateSync, inflateSync } from 'node:zlib';
 import { PAL, type Color } from './palette.ts';
 
 const rgbOf = (c: Color): number => (typeof c === 'number' ? c : PAL[c]);
@@ -134,6 +134,40 @@ export function encodePNG(w: number, h: number, rgba: Uint8ClampedArray): Buffer
     chunk('IDAT', deflateSync(raw, { level: 9 })),
     chunk('IEND', new Uint8Array()),
   ]);
+}
+
+/** 读 8 位 RGBA 的 PNG（encodePNG 的产物和常见工具导出的图） */
+export function decodePNG(buf: Buffer): { w: number; h: number; data: Uint8ClampedArray } {
+  const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20);
+  if (buf[24] !== 8 || buf[25] !== 6 || buf[28] !== 0) throw new Error('只支持 8 位 RGBA、非隔行的 PNG');
+  const idat: Buffer[] = [];
+  for (let o = 8; o < buf.length; ) {
+    const len = buf.readUInt32BE(o);
+    if (buf.toString('ascii', o + 4, o + 8) === 'IDAT') idat.push(buf.subarray(o + 8, o + 8 + len));
+    o += len + 12;
+  }
+  const raw = inflateSync(Buffer.concat(idat));
+  const data = new Uint8ClampedArray(w * h * 4);
+  const stride = w * 4;
+  // 逐行反做 PNG 的五种过滤
+  for (let y = 0; y < h; y++) {
+    const f = raw[y * (stride + 1)], src = y * (stride + 1) + 1, dst = y * stride;
+    for (let i = 0; i < stride; i++) {
+      const a = i >= 4 ? data[dst + i - 4] : 0, b = y ? data[dst - stride + i] : 0, c = i >= 4 && y ? data[dst - stride + i - 4] : 0;
+      const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+      const pred = f === 1 ? a : f === 2 ? b : f === 3 ? (a + b) >> 1 : f === 4 ? (pa <= pb && pa <= pc ? a : pb <= pc ? b : c) : 0;
+      data[dst + i] = (raw[src + i] + pred) & 255;
+    }
+  }
+  return { w, h, data };
+}
+
+/** 读一张 PNG 成 Pix */
+export function loadPix(url: URL): Pix {
+  const { w, h, data } = decodePNG(readFileSync(url));
+  const p = new Pix(w, h);
+  p.data.set(data);
+  return p;
 }
 
 /** 确定性随机数：同一种子每次生成同样的美术，方便比对 diff */

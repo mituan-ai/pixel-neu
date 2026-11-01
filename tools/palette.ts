@@ -60,9 +60,10 @@ export const PAL = {
   plain0: 0xb5b0a5,
   plain1: 0xd3cfc4,
   plain2: 0xe8e4da,
-  roof0: 0x7d8284,
-  roof1: 0x93989a,
-  roof2: 0xaeb2b2,
+  // 屋顶是偏暖的混凝土灰，比沥青亮得多（据卫星图 S7）
+  roof0: 0x7c7a74,
+  roof1: 0xa3a19a,
+  roof2: 0xc8c5bc,
 
   // 玻璃
   glass0: 0x33414f,
@@ -85,6 +86,11 @@ export const PAL = {
   gold: 0xd8b04a,
   slate: 0x2b3442,
   white: 0xffffff,
+  // 运动场：塑胶跑道、硬地球场
+  track0: 0x9a4038,
+  track1: 0xb4524a,
+  court0: 0x3c7266,
+  court1: 0x4c8a7a,
 
   // 角色可染色部件的灰阶（运行时乘以玩家选的颜色）
   tint0: 0x8c8c8c,
