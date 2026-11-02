@@ -30,7 +30,8 @@ Node 要 22.5 以上（`node:sqlite`）。启动时会打印一行 SQLite 实验
 2. 建库目录：`mkdir -p /srv/pixel-neu/data && chown pixelneu /srv/pixel-neu/data`。
 3. 在 `pixel-neu.service` 的 `[Service]` 里加 `Environment=PHONE_SALT=…`、`Environment=DB_FILE=/srv/pixel-neu/data/pixel-neu.db`（短信服务商定了再加 `SMS_PROVIDER` 和密钥），`systemctl daemon-reload && systemctl restart pixel-neu`。
 4. 登录接口走现有的 `/colyseus/` 反代（`/colyseus/api/...`）。短信和接口的限额按客户端 IP 计，服务端取 `X-Real-IP`，所以这个 location 里必须有 `proxy_set_header X-Real-IP $remote_addr;`（覆盖客户端自己带的头），否则别人伪造这个头就能绕过限额。
-5. 数据库每天备份一次，例如 cron：`sqlite3 /srv/pixel-neu/data/pixel-neu.db ".backup /srv/pixel-neu/backup/db-$(date +\%F).db"`，保留 30 天。
+5. 网页目录开 gzip，类型至少包括 `application/json`、`application/javascript`、`text/css`：map.json 原样 1.6 MB，压缩后约 145 KB，首屏总传输约 2 MB。
+6. 数据库每天备份一次，例如 cron：`sqlite3 /srv/pixel-neu/data/pixel-neu.db ".backup /srv/pixel-neu/backup/db-$(date +\%F).db"`，保留 30 天。
 
 ## 管理
 
