@@ -88,7 +88,7 @@ export function loadBuildings(osm: { elements: OsmEl[] }, survey: Survey, gateX:
     for (let k = 0; k < px.length; k += 2) (x0 = Math.min(x0, px[k])), (x1 = Math.max(x1, px[k])), (y0 = Math.min(y0, px[k + 1])), (y1 = Math.max(y1, px[k + 1]));
     const w = x1 - x0 + 1, h = y1 - y0 + 1;
     const meta = NAMED[src.id] ?? { name: '', style: 'plain' as const };
-    const b: BuildingModel = { id: src.id, name: meta.name, style: meta.style, x: x0, y: y0, w, h, part: new Uint8Array(w * h), parts: [partOf(fix, storeys)], extraTop: 0 };
+    const b: BuildingModel = { id: src.id, name: fix.name ?? meta.name, style: meta.style, x: x0, y: y0, w, h, part: new Uint8Array(w * h), parts: [partOf(fix, storeys)], extraTop: 0 };
     for (let k = 0; k < px.length; k += 2) b.part[(px[k + 1] - y0) * w + px[k] - x0] = 1;
     const zones: Part[] = [...(fix.parts ?? [])];
     // 信息学馆（据航拍 R-info-06-02、正面照 R-info-01）：两翼 5 层；中轴上的中央楼 7 层，宽约 26 m、

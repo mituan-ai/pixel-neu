@@ -7,6 +7,7 @@ data/preview.png
 data/sat-*.png
 data/check*.png
 data/parallax.png
+data/*-sheet.png
 .env.local
 data/ref/
 art-inbox/*

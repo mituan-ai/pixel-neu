@@ -304,7 +304,14 @@ const POI: { name: string; at: P | undefined; text: string; src: string }[] = [
   { name: '刘长春像', at: monumentAt['刘长春像'], text: '基座刻有“中国奥运第一人”。', src: 'S1,S25' },
   { name: '一二九塑像', at: monumentAt['一二九塑像'], text: '纪念一二九运动的群雕。', src: 'S1,S23' },
 ];
-for (const p of POI) if (p.at) point('poi', p.name, p.at, { text: p.text, src: p.src, radius: 16 * PPM });
+for (const p of [...POI, ...survey.places]) if (p.at) point('poi', p.name, p.at, { text: p.text, src: p.src, radius: 16 * PPM });
+
+// 楼门和单车停放排：生态和寻路用，不画图。停放排的 dx、dy 是终点相对起点的像素偏移
+for (const d of survey.doors) point('door', '', d.at, { facing: d.facing, main: d.main ?? false });
+for (const r of survey.bikeRacks) {
+  const [x0, y0] = wpx(r.from), [x1, y1] = wpx(r.to);
+  point('rack', '', r.from, { dx: Math.round(x1 - x0), dy: Math.round(y1 - y0), covered: r.covered ?? false });
+}
 
 /**
  * 建筑对象：楼基外接框（世界像素）。front 是每个视角下，精灵图按 16 像素一列切开后，

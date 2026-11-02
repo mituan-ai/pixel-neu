@@ -180,3 +180,32 @@ export function rng(seed: number): () => number {
     return (s >>> 0) / 4294967296;
   };
 }
+
+/** 一张带锚点的小图：脚底（或身体中心）落在 (ax, ay) */
+export interface Sprite {
+  pix: Pix;
+  ax: number;
+  ay: number;
+}
+export type AtlasMeta = Record<string, { x: number; y: number; w: number; h: number; ax: number; ay: number }>;
+
+/** 把小图按高度从高到低排进宽 width 的图集，返回图集和每张图的位置 */
+export function packAtlas(sprites: Record<string, Sprite>, width = 1024): { atlas: Pix; meta: AtlasMeta } {
+  const pad = 1;
+  const items = Object.entries(sprites).sort((a, b) => b[1].pix.h - a[1].pix.h);
+  const pos: [number, number][] = [];
+  let x = 0, y = 0, rowH = 0;
+  for (const [, a] of items) {
+    if (x + a.pix.w > width) (x = 0), (y += rowH + pad), (rowH = 0);
+    pos.push([x, y]);
+    x += a.pix.w + pad;
+    rowH = Math.max(rowH, a.pix.h);
+  }
+  const atlas = new Pix(width, y + rowH);
+  const meta: AtlasMeta = {};
+  items.forEach(([name, a], i) => {
+    atlas.blit(a.pix, pos[i][0], pos[i][1]);
+    meta[name] = { x: pos[i][0], y: pos[i][1], w: a.pix.w, h: a.pix.h, ax: a.ax, ay: a.ay };
+  });
+  return { atlas, meta };
+}

@@ -71,10 +71,11 @@ export interface Survey {
    * - height、roof、rise、toward：整栋楼的高度和屋顶（见 Part）
    * - parts：高度分区（楼基坐标系，见 Part）
    * - drop：OSM 轮廓和实际的楼对不上（形状错、楼已拆），不画它，改在 newBuildings 里重描
+   * - name、src：楼名和它的来源编号（docs/sources.md 的 S 号，逗号分隔）；不写就没有名字，OSM 的 name 不自动用
    */
-  buildings: Record<string, { shift?: P; lean?: P; storeys?: number; height?: number; roof?: Part['roof']; rise?: number; toward?: P; parts?: Part[]; drop?: boolean }>;
-  /** OSM 里没有的楼：形状直接描墙脚（楼基），不起名；height、roof、rise、toward、parts 同上 */
-  newBuildings: (Shape & { storeys: number; height?: number; roof?: Part['roof']; rise?: number; toward?: P; parts?: Part[] })[];
+  buildings: Record<string, { shift?: P; lean?: P; storeys?: number; height?: number; roof?: Part['roof']; rise?: number; toward?: P; parts?: Part[]; drop?: boolean; name?: string; src?: string }>;
+  /** OSM 里没有的楼：形状直接描墙脚（楼基）；height、roof、rise、toward、parts、name、src 同上 */
+  newBuildings: (Shape & { storeys: number; height?: number; roof?: Part['roof']; rise?: number; toward?: P; parts?: Part[]; name?: string; src?: string })[];
   /**
    * 视差标定（npm run parallax 用）：box [x0, y0, x1, y1] 范围里的楼，以 ref 这栋 OSM 楼为参考算每期卫星图的斜拍偏移。
    * ref 的 shift 和 storeys 必须是对着墙脚、立面照片量准的。卫星图是几次航拍拼起来的，换一片偏移方向和大小都会变，所以按范围分别标定。
@@ -102,6 +103,12 @@ export interface Survey {
   stalls: { at: P; n: number; back: 'N' | 'E' | 'S' | 'W' }[];
   /** 北门以外的校门：校界栅栏在 at 处断开 width 米 */
   gates: { at: P; width: number }[];
+  /** 楼门：at 是门洞中点（落在墙脚线上），facing 是门朝外的方向，main 是正门 */
+  doors: { at: P; facing: 'N' | 'E' | 'S' | 'W'; main?: boolean }[];
+  /** 单车停放排：车头朝向和排垂直，从 from 到 to 每 0.7 m 一辆；covered 是有棚的（多为电动车棚） */
+  bikeRacks: { from: P; to: P; covered?: boolean }[];
+  /** 兴趣点（介绍卡片）：at 是卡片触发的位置（楼的正门外、纪念物旁），text 每句都要有来源，src 是 S 号，逗号分隔 */
+  places: { name: string; at: P; text: string; src: string }[];
 }
 
 export function loadSurvey(): Survey {

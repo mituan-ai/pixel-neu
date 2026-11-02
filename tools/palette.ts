@@ -102,6 +102,16 @@ export const PAL = {
   statue0: 0x37403b,
   statue1: 0x536057,
   statue2: 0x6c756d,
+
+  // 车辆：牌照和粉色车漆的背光面
+  carPlateB: 0x2664b5,
+  carPlateG0: 0x8ddd98,
+  carPlateG1: 0x41965c,
+  carPink1: 0xb96983,
+  carPink0: 0x78455c,
+
+  // 共享单车：青绿色车架
+  bikeCyan: 0x35b9a6,
 } as const;
 
 export type PalKey = keyof typeof PAL;

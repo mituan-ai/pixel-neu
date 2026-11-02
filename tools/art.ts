@@ -6,11 +6,15 @@ import { EMOTES } from '../shared/social.ts';
 import { FACING, VIEWS, VIEW_NAME, type View } from '../shared/view.ts';
 import { GROUND_CHUNK, LAYER, METERS_PER_TILE, TILE, prop, type TiledMap } from '../shared/world.ts';
 import { drawAvatarSheet } from './art-avatar.ts';
+import { drawBikes } from './art-bikes.ts';
+import { drawFauna } from './art-fauna.ts';
+import { drawUi } from './art-ui.ts';
+import { drawVehicles } from './art-vehicles.ts';
 import { drawBuilding } from './art-building.ts';
 import { loadBuildings } from './buildings.ts';
 import { toWorld } from './geo.ts';
 import { PAL, type PalKey } from './palette.ts';
-import { Pix, loadPix, rng } from './pix.ts';
+import { Pix, loadPix, packAtlas, rng, type Sprite } from './pix.ts';
 import { loadSurvey } from './survey.ts';
 import { TREES } from './tiles.ts';
 
@@ -27,11 +31,7 @@ function save(pix: Pix, name: string): void {
 
 // ---------- 物件 ----------
 // 每个物件一张小图，脚底（锚点）在 (ax, ay)。合成一张图集 props.png + props.json
-interface PropArt {
-  pix: Pix;
-  ax: number;
-  ay: number;
-}
+type PropArt = Sprite;
 const shadowAt = (p: Pix, cx: number, cy: number, rx: number, ry: number) => p.ellipse(cx, cy, rx, ry, 'shadow', 60);
 
 /** 只往透明处画的地面阴影（不盖住树本身） */
@@ -577,25 +577,30 @@ TREES.forEach((name, i) => {
 });
 
 {
-  // 图集：按高度从高到低排成宽 1024 的若干行
-  const pad = 1, AW = 1024;
-  const items = Object.entries(PROPS).sort((a, b) => b[1].pix.h - a[1].pix.h);
-  const pos: [number, number][] = [];
-  let x = 0, y = 0, rowH = 0;
-  for (const [, a] of items) {
-    if (x + a.pix.w > AW) (x = 0), (y += rowH + pad), (rowH = 0);
-    pos.push([x, y]);
-    x += a.pix.w + pad;
-    rowH = Math.max(rowH, a.pix.h);
-  }
-  const atlas = new Pix(AW, y + rowH);
-  const meta: Record<string, { x: number; y: number; w: number; h: number; ax: number; ay: number }> = {};
-  items.forEach(([name, a], i) => {
-    atlas.blit(a.pix, pos[i][0], pos[i][1]);
-    meta[name] = { x: pos[i][0], y: pos[i][1], w: a.pix.w, h: a.pix.h, ax: a.ax, ay: a.ay };
-  });
+  const { atlas, meta } = packAtlas(PROPS);
   save(atlas, 'props.png');
   writeFileSync(out('props.json'), JSON.stringify(meta, null, 1));
+}
+
+// ---------- 生态与界面（车辆、动物、图标），目录在 shared/vehicles.ts、fauna.ts、icons.ts ----------
+for (const [name, sprites] of [
+  ['vehicles', { ...drawVehicles(), ...drawBikes() }],
+  ['fauna', drawFauna()],
+  ['ui', drawUi()],
+] as const) {
+  const { atlas, meta } = packAtlas(sprites);
+  save(atlas, `${name}.png`);
+  writeFileSync(out(`${name}.json`), JSON.stringify(meta, null, 1));
+  // 放大 3 倍、铺浅灰底的联系表 data/<名字>-sheet.png（不进仓库），审图用
+  const k = 3, sheet = new Pix(atlas.w * k, atlas.h * k);
+  sheet.rect(0, 0, sheet.w, sheet.h, 'grey2');
+  for (let y = 0; y < atlas.h; y++)
+    for (let x = 0; x < atlas.w; x++) {
+      const i = (y * atlas.w + x) * 4;
+      if (atlas.data[i + 3]) sheet.rect(x * k, y * k, k, k, (atlas.data[i] << 16) | (atlas.data[i + 1] << 8) | atlas.data[i + 2], atlas.data[i + 3]);
+    }
+  mkdirSync(new URL('../data/', import.meta.url), { recursive: true });
+  sheet.save(new URL(`../data/${name}-sheet.png`, import.meta.url));
 }
 
 // ---------- 角色与表情 ----------
@@ -699,4 +704,4 @@ const buildingArt = new Map<string, Pix>();
   mkdirSync(new URL('../data/', import.meta.url), { recursive: true });
   pv.save(new URL('../data/preview.png', import.meta.url));
 }
-console.log(`美术已生成：${buildingArt.size} 栋建筑、${Object.keys(PROPS).length} 种物件、avatar.png、emotes.png`);
+console.log(`美术已生成：${buildingArt.size} 栋建筑、${Object.keys(PROPS).length} 种物件、车辆、动物、界面图标、avatar.png、emotes.png`);

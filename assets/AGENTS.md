@@ -10,3 +10,5 @@
 - 人物是 Q 版 24×32：底模和七种发型来自 `art/chibi/`，衣服、鞋和四种短发由生成器按底模轮廓画；四方向、3 帧走路，游戏里按 1 倍显示。部件和选项一一对应，见 `tools/art-avatar.ts` 和 `shared/social.ts`。
 - 第三方素材的出处和许可写进 `CREDITS.md`。
 - 生成产物（`map.json`、`ground/`、`minimap.png`、`buildings/` 等）不要手改。手绘素材要加进 `tools/art.ts` 的 `HANDMADE`，生成器就不会覆盖它。
+- 车辆（`vehicles.png`）、动物（`fauna.png`）按屏幕朝向（下、左、右、上）出图，不按视角；目录在 `shared/vehicles.ts`、`shared/fauna.ts`，`tests/catalog.test.ts` 核对图集和目录一一对应、只用色板颜色。车辆按真实尺寸，动物和人一样按 Q 版比例。两者都不画投影，投影由场景按太阳方向画。
+- 界面图标和九宫格皮肤在 `ui.png`，目录在 `shared/icons.ts`。
