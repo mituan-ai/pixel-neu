@@ -1,5 +1,6 @@
 // 实时投影：按太阳方位和高度，把楼（assets/heights.png，每米一格的屋面高度）和树（树冠椭圆）的影子
-// 画进 128 m 见方的分块图（每米 2 像素），铺在地面上、一切站立物之下。只算镜头附近的块，每帧最多算一块；
+// 画进 128 m 见方的分块图（每米 2 像素），铺在地面上、一切站立物之下。只算镜头附近的块，
+// 一块分几帧算完（每帧最多 BUDGET 毫秒，手机上不掉帧），算完才换图；
 // 太阳每分钟只走约 0.25°，方位或高度变化超过 0.5° 才整体重算。
 import Phaser from 'phaser';
 import type { Body } from '../shared/sky.ts';
@@ -13,6 +14,8 @@ const RES = 2;
 const MAX_LEN = 90;
 /** 路网转正的角度：世界坐标的上方比真北偏了这么多（见 tools/geo.ts） */
 const ROT = (3.85 * Math.PI) / 180;
+/** 每帧最多花多少毫秒算影子 */
+const BUDGET = 4;
 /** 影子颜色 */
 const COLOR = [29, 42, 70] as const;
 const ALPHA = 92;
@@ -32,6 +35,14 @@ interface Chunk {
   sun?: string;
 }
 
+/** 正在算的一块：算到第几行，用的哪个太阳 */
+interface Job {
+  ch: Chunk;
+  sun: string;
+  row: number;
+  mask: Uint8Array;
+}
+
 export class Shadows {
   private readonly scene: Phaser.Scene;
   private heights: Uint8Array | null = null;
@@ -46,6 +57,7 @@ export class Shadows {
   private view = 0;
   private place: (x: number, y: number) => { x: number; y: number } = (x, y) => ({ x, y });
   private layer: Phaser.GameObjects.Layer;
+  private job: Job | null = null;
 
   constructor(scene: Phaser.Scene, layer: Phaser.GameObjects.Layer) {
     this.scene = scene;
@@ -108,21 +120,30 @@ export class Shadows {
         this.chunks.delete(k);
       }
     }
-    // 每帧最多算一块，先算还没有图的
-    let todo: Chunk | undefined;
-    for (const k of want) {
-      const ch = this.chunks.get(k) ?? { key: k };
-      this.chunks.set(k, ch);
-      if (ch.sun === this.sunKey) continue;
-      if (!todo || (!ch.img && todo.img)) todo = ch;
+    // 手上的活不再需要（块卸掉了、太阳变了）就放下
+    if (this.job && (this.job.sun !== this.sunKey || !this.chunks.has(this.job.ch.key))) this.job = null;
+    if (!this.job) {
+      // 先算还没有图的
+      let todo: Chunk | undefined;
+      for (const k of want) {
+        const ch = this.chunks.get(k) ?? { key: k };
+        this.chunks.set(k, ch);
+        if (ch.sun === this.sunKey) continue;
+        if (!todo || (!ch.img && todo.img)) todo = ch;
+      }
+      if (todo) this.job = { ch: todo, sun: this.sunKey, row: 0, mask: new Uint8Array(SIZE * RES * SIZE * RES) };
     }
-    if (todo) this.draw(todo);
+    if (this.job && this.work(this.job)) {
+      this.draw(this.job.ch, this.job.mask);
+      this.job = null;
+    }
   }
 
-  private draw(ch: Chunk): void {
-    const [c, r] = ch.key.split(',').map(Number);
+  /** 按行算楼的影子，到时间就停，下一帧接着算；算完返回 true */
+  private work(job: Job): boolean {
+    const [c, r] = job.ch.key.split(',').map(Number);
     const N = SIZE * RES;
-    const mask = new Uint8Array(N * N);
+    const mask = job.mask;
     const H = this.heights!;
     // 太阳方位换到世界坐标：真北顺时针 az → 世界里朝太阳的单位向量
     const az = (this.sun.az * Math.PI) / 180;
@@ -132,7 +153,10 @@ export class Shadows {
     const L = Math.min(MAX_LEN, 255 / tan);
     // 地图左上角（EXTENT 西北角）在世界像素 0,0，高度图每米一格
     const ox = c * SIZE, oy = r * SIZE;
-    for (let v = 0; v < N; v++)
+    const start = performance.now();
+    for (; job.row < N; job.row++) {
+      if (performance.now() - start > BUDGET) return false;
+      const v = job.row;
       for (let u = 0; u < N; u++) {
         const mx = ox + (u + 0.5) / RES, my = oy + (v + 0.5) / RES;
         // 往太阳方向一米一米找：哪一格的屋面高过视线，这里就在影子里
@@ -146,7 +170,15 @@ export class Shadows {
           }
         }
       }
-    // 树：树冠当成悬在半空的球，影子是沿影子方向拉长的椭圆，再加一条树干的影子
+    }
+    this.treeShadows(c, r, mask, tx, ty, tan);
+    return true;
+  }
+
+  /** 树：树冠当成悬在半空的球，影子是沿影子方向拉长的椭圆，再加一条树干的影子 */
+  private treeShadows(c: number, r: number, mask: Uint8Array, tx: number, ty: number, tan: number): void {
+    const N = SIZE * RES;
+    const ox = c * SIZE, oy = r * SIZE;
     const dx = -tx, dy = -ty;
     for (const t of this.trees) {
       const len = t.h / tan;
@@ -168,6 +200,10 @@ export class Shadows {
         if (u >= 0 && v >= 0 && u < N && v < N) mask[v * N + u] = 1;
       }
     }
+  }
+
+  private draw(ch: Chunk, mask: Uint8Array): void {
+    const N = SIZE * RES;
     const key = `sh${ch.key}`;
     const tex = this.scene.textures.exists(key) ? (this.scene.textures.get(key) as Phaser.Textures.CanvasTexture) : this.scene.textures.createCanvas(key, N, N)!;
     const img = tex.context.createImageData(N, N);
