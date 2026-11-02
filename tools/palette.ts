@@ -112,6 +112,16 @@ export const PAL = {
 
   // 共享单车：青绿色车架
   bikeCyan: 0x35b9a6,
+
+  // 动物：橘色被毛的亮面和背光面
+  faunaGinger: 0xd88a4b,
+  faunaGingerLight: 0xf3b46b,
+
+  // 界面：面板、主按钮、提示与在线状态
+  uiCream: 0xfffaf0,
+  uiBlue: 0x3fa9f5,
+  uiOrange: 0xffb627,
+  uiGreen: 0x5cc46a,
 } as const;
 
 export type PalKey = keyof typeof PAL;

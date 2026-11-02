@@ -8,6 +8,7 @@ import { GROUND_CHUNK, LAYER, METERS_PER_TILE, TILE, prop, type TiledMap } from 
 import { drawAvatarSheet } from './art-avatar.ts';
 import { drawBikes } from './art-bikes.ts';
 import { drawFauna } from './art-fauna.ts';
+import { drawFx } from './art-fx.ts';
 import { drawUi } from './art-ui.ts';
 import { drawVehicles } from './art-vehicles.ts';
 import { drawBuilding } from './art-building.ts';
@@ -582,11 +583,12 @@ TREES.forEach((name, i) => {
   writeFileSync(out('props.json'), JSON.stringify(meta, null, 1));
 }
 
-// ---------- 生态与界面（车辆、动物、图标），目录在 shared/vehicles.ts、fauna.ts、icons.ts ----------
+// ---------- 生态、界面和特效（车辆、动物、图标、灯光雨雪），目录在 shared/vehicles.ts、fauna.ts、icons.ts、fx.ts ----------
 for (const [name, sprites] of [
   ['vehicles', { ...drawVehicles(), ...drawBikes() }],
   ['fauna', drawFauna()],
   ['ui', drawUi()],
+  ['fx', drawFx()],
 ] as const) {
   const { atlas, meta } = packAtlas(sprites);
   save(atlas, `${name}.png`);

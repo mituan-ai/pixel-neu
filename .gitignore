@@ -2,6 +2,7 @@ node_modules/
 dist/
 dist-server/
 data/preview.png
+data/preview-night.png
 *.log
 .playwright-cli/
 data/sat-*.png

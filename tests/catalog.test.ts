@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { faunaKeys } from '../shared/fauna.ts';
+import { FX } from '../shared/fx.ts';
 import { ICONS, SKINS } from '../shared/icons.ts';
 import { vehicleKeys } from '../shared/vehicles.ts';
 import { PAL } from '../tools/palette.ts';
@@ -14,6 +15,7 @@ describe('素材目录', () => {
     ['vehicles', vehicleKeys()],
     ['fauna', faunaKeys()],
     ['ui', [...ICONS, ...SKINS]],
+    ['fx', FX],
   ] as const)
     it(`${name}.json 和目录一一对应`, () => {
       expect(Object.keys(meta(name)).sort()).toEqual([...keys].sort());
@@ -30,7 +32,7 @@ describe('素材目录', () => {
 
   it('只用色板颜色，没有半透明', () => {
     const pal = new Set<number>(Object.values(PAL));
-    for (const name of ['vehicles', 'fauna', 'ui']) {
+    for (const name of ['vehicles', 'fauna', 'ui', 'fx']) {
       const { data } = decodePNG(readFileSync(new URL(`../assets/${name}.png`, import.meta.url)));
       const bad = new Set<string>();
       for (let i = 0; i < data.length; i += 4) {
