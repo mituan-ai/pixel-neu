@@ -89,14 +89,19 @@ export const PAL = {
   // 运动场：塑胶跑道、硬地球场
   track0: 0x9a4038,
   track1: 0xb4524a,
-  court0: 0x3c7266,
-  court1: 0x4c8a7a,
+  court0: 0x4c7b42,
+  court1: 0x629353,
 
   // 角色可染色部件的灰阶（运行时乘以玩家选的颜色）
   tint0: 0x8c8c8c,
   tint1: 0xbdbdbd,
   tint2: 0xe6e6e6,
   tint3: 0xffffff,
+
+  // 刘长春像：S25 的暗灰铜色
+  statue0: 0x37403b,
+  statue1: 0x536057,
+  statue2: 0x6c756d,
 } as const;
 
 export type PalKey = keyof typeof PAL;

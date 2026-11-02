@@ -1,5 +1,6 @@
-// data/survey.json：从卫星图（S7）描下来的地面与树，坐标都是世界米坐标（上北，见 geo.ts）。
-// 后写的面盖住先写的面，所以先写大面（草地、林地），再写路和铺装。
+// data/survey.json：从卫星图（S7）描下来的地面、楼、树和物件，坐标都是世界米坐标（上北，见 geo.ts）。
+// 后写的面盖住先写的面，所以先写大面（街区底面、草地、林地），再写路和铺装。
+// 生成器按 1 m = 8 px 直接把这些形状画成像素，不再先落到 2 m 的格子上，所以弧线、斜线和非整格的宽度都能画准。
 import { readFileSync } from 'node:fs';
 import type { P } from './geo.ts';
 
@@ -7,23 +8,93 @@ import type { P } from './geo.ts';
 /** track：塑胶跑道；pitch：足球场草皮（天然或人工）；court：硬地球场 */
 export type AreaKind = 'asphalt' | 'paving' | 'parking' | 'grass' | 'wood' | 'hedge' | 'planter' | 'water' | 'track' | 'pitch' | 'court';
 
+/**
+ * 一块地面的形状，四种写法选一种：
+ * - poly：多边形顶点
+ * - line + width：沿中线 line 宽 width 米的带子（路、步道）。两端是平头；
+ *   curve 是中线折点处的圆弧半径（弯路写成几个折点加 curve，生成器自动倒圆弧）；
+ *   corner 是这条路两端和别的路相接处的转角半径（路沿倒圆），只对 asphalt 有效，默认 4 m；
+ *   dash 在中线上画白色虚线（双车道的车行道）
+ * - circle：[圆心 x, 圆心 y, 半径]
+ * - ellipse：[圆心 x, 圆心 y, 东西半轴, 南北半轴]
+ */
+export interface Shape {
+  poly?: P[];
+  line?: P[];
+  width?: number;
+  curve?: number;
+  corner?: number;
+  dash?: boolean;
+  circle?: [number, number, number];
+  ellipse?: [number, number, number, number];
+}
+
+/**
+ * 楼的一个高度分区（世界米坐标，楼基坐标系）：楼基里落在这个形状内的部分按这里的高度和屋顶画，
+ * 后写的分区盖住先写的。分区只改高度，不扩大楼基。
+ * - storeys：层数（一层 3.6 m）；height：直接给高度（米），给了就不看 storeys
+ * - roof：flat 平顶（默认）；dome 穹顶，墙高之上再拱起 rise 米，按分区外接椭圆起拱；
+ *   stands 看台，座位从朝 toward 的一边起、到背向的一边升到全高，按 0.8 m 一排画台阶，排和「分区中心 → toward」垂直
+ */
+export interface Part extends Shape {
+  storeys?: number;
+  height?: number;
+  roof?: 'flat' | 'dome' | 'stands';
+  rise?: number;
+  toward?: P;
+}
+
+/**
+ * 标准运动场，按规定尺寸生成地面、标线和球门，卫星图只用来定位置和朝向：
+ * - track：400 m 标准跑道（直道 84.39 m、弯道内沿半径 36.5 m，lanes 条 1.22 m 宽的跑道，默认 8），内场是足球场
+ * - football：足球场 length × width（默认 105 × 68）
+ * - basketball 28 × 15、tennis 23.77 × 10.97（双打线）、volleyball 18 × 9：只画场线，场地底色另用 court 面描
+ * at 是场地中心；angle 是长轴相对正南北的转角（度，顺时针），默认 0
+ */
+export interface Field {
+  type: 'track' | 'football' | 'basketball' | 'tennis' | 'volleyball';
+  at: P;
+  angle?: number;
+  lanes?: number;
+  length?: number;
+  width?: number;
+}
+
 export interface Survey {
   /**
-   * OSM 楼轮廓的校正（米）。卫星图是斜着拍的，楼顶会偏离楼基，楼越高偏得越多，OSM 描的轮廓常常歪在楼顶上：
-   * - shift：轮廓只描了楼顶，整体平移到楼基的量
-   * - lean：轮廓把楼顶和楼基并在一起描了（一侧是楼顶边、另一侧是墙脚），楼顶相对楼基的偏移；
-   *   生成时把轮廓朝 lean 方向多出的那一条切掉，只留楼基。量法：卫星图上露出的那面墙有多宽，lean 就有多长，方向朝墙的反面
+   * OSM 楼轮廓的校正（米）。卫星图是斜着拍的，楼顶会偏离楼基，楼越高偏得越多，OSM 描的轮廓常常是楼顶：
+   * - shift：轮廓是楼顶，整体平移到楼基的量（形状不变）。用 npm run parallax 量
+   * - lean：只用于轮廓把楼顶和露出的立面一起描进去的楼（轮廓比两期卫星图上的楼顶都宽出 |lean|）：
+   *   生成时把轮廓和自己朝 -lean 平移的那份取交集。这样会把与 lean 垂直的翼都削薄 |lean|，
+   *   轮廓只是楼顶时千万不要用，用 shift
    * - storeys：地上层数，不写按 OSM 的 building:levels，再没有按 4 层
+   * - height、roof、rise、toward：整栋楼的高度和屋顶（见 Part）
+   * - parts：高度分区（楼基坐标系，见 Part）
    * - drop：OSM 轮廓和实际的楼对不上（形状错、楼已拆），不画它，改在 newBuildings 里重描
    */
-  buildings: Record<string, { shift?: P; lean?: P; storeys?: number; drop?: boolean }>;
-  /** OSM 里没有的楼：poly 直接描墙脚（楼基），不起名 */
-  newBuildings: { poly: P[]; storeys: number }[];
-  areas: { kind: AreaKind; poly: P[] }[];
+  buildings: Record<string, { shift?: P; lean?: P; storeys?: number; height?: number; roof?: Part['roof']; rise?: number; toward?: P; parts?: Part[]; drop?: boolean }>;
+  /** OSM 里没有的楼：形状直接描墙脚（楼基），不起名；height、roof、rise、toward、parts 同上 */
+  newBuildings: (Shape & { storeys: number; height?: number; roof?: Part['roof']; rise?: number; toward?: P; parts?: Part[] })[];
+  /**
+   * 视差标定（npm run parallax 用）：box [x0, y0, x1, y1] 范围里的楼，以 ref 这栋 OSM 楼为参考算每期卫星图的斜拍偏移。
+   * ref 的 shift 和 storeys 必须是对着墙脚、立面照片量准的。卫星图是几次航拍拼起来的，换一片偏移方向和大小都会变，所以按范围分别标定。
+   * off 是第二期（2026-10-29）地面相对第一期错开的米数：两期对照图上量同一个路口或路面标线，不写按 [0, 0]
+   */
+  tilt: { box: [number, number, number, number]; ref: number; off?: P }[];
+  areas: (Shape & { kind: AreaKind })[];
+  /** 标准运动场（见 Field），画在 areas 之上 */
+  fields: Field[];
   /** 每棵树：树干位置和冠幅半径（米） */
   trees: [number, number, number][];
   /** 一排等间距的树（行道树）：从 from 到 to（两端都种），间距 gap 米，冠幅半径 r 米 */
   treeRows: { from: P; to: P; gap: number; r: number }[];
+  /** 一排等间距的路灯：从 from 到 to（两端都放），间距 gap 米；sprite 不写用 lamp */
+  lampRows: { from: P; to: P; gap: number; sprite?: string }[];
+  /**
+   * 单个物件：sprite 是 props 图集里的名字（四个视角的物件只写名字，不带 @N），at 是占地中心，
+   * size 是占地东西、南北宽（米，挡路），rot 是相对美术朝向顺时针转了几个 90°；flat 平铺在地上、可以走
+   */
+  props: { sprite: string; at: P; size: P; rot?: number; flat?: boolean }[];
   /**
    * 垂直车位排：每个车位宽 2.5 m、深 5 m。at 是底线的起点（北端或西端），back 是底线在车位的哪一侧，
    * n 个车位从 at 起沿底线往南（底线在东西侧时）或往东（底线在南北侧时）排

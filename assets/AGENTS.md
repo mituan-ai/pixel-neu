@@ -3,9 +3,10 @@
 本目录原样发布到网站根目录（本文件除外）。比例和方向见根目录 AGENTS.md。
 
 - 3/4 俯视：地面正投影，立面按真实高度竖直画在占地上方。
+- 地面不用拼贴图块：`tools/ground.ts` 按 survey.json 的形状逐像素铺材质（花纹在 `tools/art-ground.ts`），再切成 512 像素见方的分块图，客户端按视角旋转。
 - 光源固定在屏幕左上方，不随视角旋转；投影在每个视角下各自生成。
 - 建筑每栋出 N/E/S/W 四个朝向。立面样式按地理朝向选，没有资料的面用中性立面。
 - 带文字的物件（校名牌、校训石）每个朝向单独画，不用镜像代替。
 - 人物是 Q 版 24×32：底模和七种发型来自 `art/chibi/`，衣服、鞋和四种短发由生成器按底模轮廓画；四方向、3 帧走路，游戏里按 1 倍显示。部件和选项一一对应，见 `tools/art-avatar.ts` 和 `shared/social.ts`。
 - 第三方素材的出处和许可写进 `CREDITS.md`。
-- 生成产物（`map.json`、`buildings/`、`tiles.png` 等）不要手改。手绘素材要加进 `tools/art.ts` 的 `HANDMADE`，生成器就不会覆盖它。
+- 生成产物（`map.json`、`ground/`、`minimap.png`、`buildings/` 等）不要手改。手绘素材要加进 `tools/art.ts` 的 `HANDMADE`，生成器就不会覆盖它。

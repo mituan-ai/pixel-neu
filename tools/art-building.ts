@@ -1,24 +1,16 @@
-// 建筑：按地图里的占地掩码和高度图做 3/4 俯视挤出——每格画屋顶（上移自身高度），
-// 前面没有同高的格子就往下画立面。从后排往前排画，前排自然盖住后排。
-// 每个视角各画一张：掩码先转到视角下，屏幕朝下的那一面是哪个地理朝向，就用哪个朝向的立面。
-// 立面和屋顶花样按 style 区分；新地标在 STYLES 里加一种，再在 map.ts 的 NAMED 里指定。
+// 建筑：按楼基像素和每个像素的屋面高度（buildings.ts）做 3/4 俯视挤出——每个像素画屋顶（上移自身高度），
+// 前面那个像素更矮就往下画立面。从后排往前排画，前排自然盖住后排；斜墙、弧墙按像素自然成形。
+// 每个视角各画一张：楼基先转到视角下，屏幕朝下的那一面是哪个地理朝向，就用哪个朝向的立面。
+// 立面和屋顶花样按 style 区分；新地标在 STYLES 里加一种，再在 buildings.ts 的 NAMED 里指定。
 // 有照片依据的立面放在 art/facades/<style>-<朝向>.png（正立面图，1 m = 8 px），按图取色；其余朝向用程序立面。
 import { existsSync } from 'node:fs';
-import { FACING, fromView, rotateGrid, viewSize, type View } from '../shared/view.ts';
-import { TILE } from '../shared/world.ts';
+import { FACING, fromView, toView, viewSize, type View } from '../shared/view.ts';
+import { heights, type BuildingModel, type PartModel } from './buildings.ts';
 import type { PalKey } from './palette.ts';
 import { Pix, loadPix, rng } from './pix.ts';
 import { BUILDING } from './tiles.ts';
 
 const { storey: STOREY, plinth: PLINTH, parapet: PARAPET, shadow: SHADOW } = BUILDING;
-
-export interface BuildingSpec {
-  sprite: string;
-  style: string;
-  mask: string;
-  levels: string;
-  top: number;
-}
 
 interface FacadeCtx {
   /** 立面上的 x（像素，相对建筑左缘） */
@@ -209,92 +201,129 @@ function elevation(style: string, face: string): Pix | null {
   return elevations.get(key)!;
 }
 
-export function drawBuilding(spec: BuildingSpec, view: View = 0): Pix {
-  const world = spec.mask.split('/');
-  const rows = rotateGrid(view, world.map((r) => [...r])).map((r) => r.join(''));
-  const levels = spec.levels.split(',').map(Number);
-  const nr = rows.length, nc = rows[0].length;
+/** 世界朝向的数组转到视角下（宽 w、高 h） */
+function rotateArr<T extends Uint8Array | Float32Array>(v: View, a: T, w: number, h: number, make: (n: number) => T): { a: T; w: number; h: number } {
+  const s = viewSize(v, w, h);
+  const out = make(s.w * s.h);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const q = toView(v, w, h, x + 0.5, y + 0.5);
+      out[Math.floor(q.y) * s.w + Math.floor(q.x)] = a[y * w + x];
+    }
+  return { a: out, w: s.w, h: s.h };
+}
+
+/** 穹顶、看台的屋面颜色：按表面朝向取明暗（光从左上来） */
+function surface(roof: PartModel['roof'], hgt: (x: number, y: number) => number, x: number, y: number, wx: number, wy: number): PalKey {
+  if (roof === 'stands') return Math.round(hgt(x, y)) % 2 ? 'water1' : 'water0';
+  const gx = hgt(x + 1, y) - hgt(x - 1, y), gy = hgt(x, y + 1) - hgt(x, y - 1);
+  const lit = (gx + gy) / 2 + 0.6;
+  // 东西向每 4 m 一道接缝
+  if (wx % 32 === 0) return lit > 0.9 ? 'stone2' : 'stone1';
+  void wy;
+  return lit > 1.4 ? 'white' : lit > 0.9 ? 'stone3' : lit > 0.3 ? 'stone2' : lit > -0.3 ? 'stone1' : 'stone0';
+}
+
+export function drawBuilding(b: BuildingModel, view: View = 0): Pix {
   const face = FACING[view];
-  const elev = elevation(spec.style, face);
-  const style = STYLES[spec.style] ?? plain;
-  const top = spec.top;
-  const pix = new Pix(nc * TILE + SHADOW, nr * TILE + top);
-  const lv = (c: number, r: number) => (r < 0 || c < 0 || r >= nr || c >= nc ? 0 : Number(rows[r][c]));
-  const h = (c: number, r: number) => levels[lv(c, r)] ?? 0;
-  const groundY = (r: number) => top + (r + 1) * TILE; // 第 r 排格子下缘在图里的 y
-  const rand = rng(Number(spec.sprite.replace(/\D/g, '')) || 7);
-  const W = nc * TILE, H = nr * TILE;
-  const worldSize = viewSize(view, W, H);
+  const elev = elevation(b.style, face);
+  const style = STYLES[b.style] ?? plain;
+  const hw = heights(b);
+  const P = rotateArr(view, b.part, b.w, b.h, (n) => new Uint8Array(n));
+  const Hh = rotateArr(view, hw, b.w, b.h, (n) => new Float32Array(n));
+  const W = P.w, H = P.h;
+  const part = (x: number, y: number) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : P.a[y * W + x]);
+  const hf = (x: number, y: number) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : Hh.a[y * W + x]);
+  const hr = (x: number, y: number) => Math.round(hf(x, y));
+  const top = Math.ceil(hw.reduce((a, v) => Math.max(a, v), 0)) + b.extraTop;
+  const pix = new Pix(W + SHADOW, H + top);
+  const rand = rng(Math.abs(b.id) || 7);
   /** 视角下屋顶平面的像素 → 世界朝向下的像素（屋顶花样按世界方向排） */
-  const toWorldPx = (x: number, y: number) => fromView(view, worldSize.w, worldSize.h, x + 0.5, y + 0.5);
-  // 中轴：信息学馆取最高一级（中央楼）最前一排的正中，其他楼取占地正中
-  const topLv = String(levels.length - 1);
-  const axisRow = [...rows].reverse().find((row) => row.includes(topLv)) ?? '';
-  const axis = spec.style === 'info' && axisRow ? ((axisRow.indexOf(topLv) + axisRow.lastIndexOf(topLv) + 1) * TILE) / 2 : W / 2;
-  const inset = insetMap(W, H, (x, y) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : h(Math.floor(x / TILE), Math.floor(y / TILE))), 255);
+  const toWorldPx = (x: number, y: number) => fromView(view, b.w, b.h, x + 0.5, y + 0.5);
+  // 中轴：信息学馆取塔楼（第 2 分区）最前一排的正中，其他楼取占地正中
+  let axis = W / 2;
+  if (b.style === 'info') {
+    let ty = -1, tx0 = W, tx1 = -1;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (part(x, y) === 2) ty = y;
+    for (let x = 0; x < W; x++) if (part(x, ty) === 2 || part(x, ty - 1) === 2) (tx0 = Math.min(tx0, x)), (tx1 = Math.max(tx1, x));
+    if (ty >= 0) axis = (tx0 + tx1 + 1) / 2;
+  }
+  // 平顶的女儿墙：按「同一平顶分区」算离边缘的距离
+  const flatId = (x: number, y: number) => {
+    const k = part(x, y);
+    return k && b.parts[k - 1].roof === 'flat' ? k : 0;
+  };
+  const inset = insetMap(W, H, flatId, 255);
 
   // 地面投影：光从左上来，影子落在右侧
-  for (let r = 0; r < nr; r++)
-    for (let c = 0; c < nc; c++)
-      if (lv(c, r) && !lv(c + 1, r)) pix.rect((c + 1) * TILE, groundY(r) - TILE, SHADOW, TILE, 'shadow', 70);
+  const shade = new Uint8Array((W + SHADOW) * H);
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++)
+      if (part(x, y) && !part(x + 1, y)) for (let k = 1; k <= SHADOW; k++) if (!part(x + k, y)) shade[y * (W + SHADOW) + x + k] = 1;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W + SHADOW; x++) if (shade[y * (W + SHADOW) + x]) pix.px(x, top + y, 'shadow', 70);
 
-  for (let r = 0; r < nr; r++) {
-    for (let c = 0; c < nc; c++) {
-      const hh = h(c, r);
-      if (!hh) continue;
-      const x0 = c * TILE;
-      const roofY = groundY(r) - TILE - hh;
-      // 屋顶：女儿墙压顶一圈亮色，内侧一道阴影；北边和西边的女儿墙把影子投到屋面上
-      for (let y = 0; y < TILE; y++)
-        for (let x = 0; x < TILE; x++) {
-          const gx = x0 + x, gy = r * TILE + y;
-          const d = inset[gy * W + gx];
-          let col: PalKey;
-          if (d < 2) col = 'roof2';
-          else if (d === 2) col = 'roof0';
-          else {
-            const wp = toWorldPx(gx, gy);
-            col = style.roof?.({ x: Math.floor(wp.x), y: Math.floor(wp.y), fx: wp.x / worldSize.w, fy: wp.y / worldSize.h, inset: d, level: lv(c, r) }) ?? (rand() < 0.04 ? 'roof0' : 'roof1');
-            const shadowed = inset[(gy - 2) * W + gx] < 2 || inset[gy * W + gx - 2] < 2;
-            if (shadowed && col === 'roof1') col = 'roof0';
-          }
-          pix.px(gx, roofY + y, col);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const k = part(x, y);
+      if (!k) continue;
+      const pm = b.parts[k - 1];
+      const hh = hr(x, y);
+      const roofY = top + y - hh;
+      // 屋顶：平顶是女儿墙压顶一圈亮色，内侧一道阴影，北边和西边的女儿墙把影子投到屋面上；穹顶和看台按表面明暗
+      const wp = toWorldPx(x, y);
+      let col: PalKey;
+      if (pm.roof !== 'flat') col = surface(pm.roof, hf, x, y, Math.floor(wp.x), Math.floor(wp.y));
+      else {
+        const d = inset[y * W + x];
+        if (d < 2) col = 'roof2';
+        else if (d === 2) col = 'roof0';
+        else {
+          col = style.roof?.({ x: Math.floor(wp.x), y: Math.floor(wp.y), fx: wp.x / b.w, fy: wp.y / b.h, inset: d, level: k }) ?? (rand() < 0.04 ? 'roof0' : 'roof1');
+          const shadowed = (y >= 2 && inset[(y - 2) * W + x] < 2) || (x >= 2 && inset[y * W + x - 2] < 2);
+          if (shadowed && col === 'roof1') col = 'roof0';
         }
-      // 立面：前面那格更矮时，画出两者高度差那一段
-      const front = h(c, r + 1);
+      }
+      pix.px(x, roofY, col);
+      // 立面：前面那个像素更矮时，画出两者高度差那一段
+      const front = hr(x, y + 1);
       if (front >= hh) continue;
-      for (let yg = front; yg < hh; yg++)
-        for (let x = 0; x < TILE; x++) {
-          const fx = x0 + x;
+      // 墙面朝向：前沿往右下斜的一段朝左下、受光，往右上斜的一段背光
+      const leftOpen = (yg: number) => hr(x - 1, y) <= yg && hr(x - 1, y + 1) <= yg;
+      const rightOpen = (yg: number) => hr(x + 1, y) <= yg;
+      for (let yg = front; yg < hh; yg++) {
+        let c: PalKey;
+        if (yg >= pm.wall) c = surface(pm.roof, hf, x, y, Math.floor(wp.x), Math.floor(wp.y));
+        else if (pm.roof === 'stands') c = yg % 6 === 0 ? 'stone1' : 'stone2';
+        else {
           // 有立面图就按图取色（图和占地按中线对齐）；女儿墙仍用程序画，和屋顶接得上
-          if (elev && yg < hh - PARAPET) {
-            const ex = fx - Math.round(W / 2) + Math.round(elev.w / 2), ey = elev.h - 1 - yg;
-            const k = (ey * elev.w + ex) * 4;
-            if (ex >= 0 && ex < elev.w && ey >= 0 && elev.data[k + 3] > 0) {
-              pix.px(fx, groundY(r) - 1 - yg, (elev.data[k] << 16) | (elev.data[k + 1] << 8) | elev.data[k + 2]);
+          if (elev && yg < pm.wall - PARAPET) {
+            const ex = x - Math.round(W / 2) + Math.round(elev.w / 2), ey = elev.h - 1 - yg;
+            const o = (ey * elev.w + ex) * 4;
+            if (ex >= 0 && ex < elev.w && ey >= 0 && elev.data[o + 3] > 0) {
+              pix.px(x, top + y - yg, (elev.data[o] << 16) | (elev.data[o + 1] << 8) | elev.data[o + 2]);
               continue;
             }
           }
-          let col: PalKey = style.facade({ x: fx, yg, face, level: lv(c, r), hTop: hh, hBottom: front, axis });
-          // 立面左右端：左亮右暗，体积感
-          if (x === 0 && h(c - 1, r + 1) < yg + 1 && h(c - 1, r) < yg + 1 && !lv(c - 1, r)) col = shade(col, +1);
-          if (x === TILE - 1 && !lv(c + 1, r)) col = shade(col, -1);
-          pix.px(fx, groundY(r) - 1 - yg, col);
+          c = style.facade({ x, yg, face, level: k, hTop: pm.wall, hBottom: front, axis });
         }
-    }
-    // 素屋面上随机放几台设备箱，打破大片平顶
-    for (let c = 0; c < nc; c++) {
-      const x = c * TILE, gy = r * TILE;
-      if (!lv(c, r) || inset[(gy + 8) * W + x + 8] < 14 || rand() > 0.015) continue;
-      const wp = toWorldPx(x + 8, gy + 8);
-      if (style.roof?.({ x: Math.floor(wp.x), y: Math.floor(wp.y), fx: wp.x / worldSize.w, fy: wp.y / worldSize.h, inset: 99, level: lv(c, r) })) continue;
-      const y = groundY(r) - TILE - h(c, r);
-      pix.rect(x + 2, y + 2, 12, 7, 'roof2');
-      pix.rect(x + 2, y + 9, 12, 3, 'roof0');
+        if (leftOpen(yg)) c = shadeKey(c, +1);
+        else if (rightOpen(yg)) c = shadeKey(c, -1);
+        pix.px(x, top + y - yg, c);
+      }
     }
   }
+  // 素平顶上随机放几台设备箱，打破大片平顶
+  for (let y = 0; y + 16 <= H; y += 16)
+    for (let x = 0; x + 16 <= W; x += 16) {
+      if (!flatId(x + 8, y + 8) || inset[(y + 8) * W + x + 8] < 14 || rand() > 0.015) continue;
+      const wp = toWorldPx(x + 8, y + 8);
+      if (style.roof?.({ x: Math.floor(wp.x), y: Math.floor(wp.y), fx: wp.x / b.w, fy: wp.y / b.h, inset: 99, level: part(x + 8, y + 8) })) continue;
+      const ry = top + y - hr(x + 8, y + 8);
+      pix.rect(x + 2, ry + 2, 12, 7, 'roof2');
+      pix.rect(x + 2, ry + 9, 12, 3, 'roof0');
+    }
 
-  if (spec.style === 'info') drawInfoCrown(pix, rows, levels, top, face);
+  if (b.style === 'info') drawInfoCrown(pix, part, W, H, hr, top, face);
   return pix;
 }
 
@@ -304,7 +333,7 @@ const SHADES: PalKey[][] = [
   ['plain0', 'plain1', 'plain2'],
   ['glass0', 'glass1', 'glass2'],
 ];
-function shade(c: PalKey, d: number): PalKey {
+function shadeKey(c: PalKey, d: number): PalKey {
   for (const ramp of SHADES) {
     const i = ramp.indexOf(c);
     if (i >= 0) return ramp[Math.max(0, Math.min(ramp.length - 1, i + d))];
@@ -317,26 +346,23 @@ function shade(c: PalKey, d: number): PalKey {
  * 再往上是宽约塔身四分之一的小塔，约 2.3 层高，北面中间一块砖红色饰面，顶上一圈檐、一根旗杆。
  * 砖红饰面只有北面有照片，其他朝向画成素面
  */
-function drawInfoCrown(pix: Pix, rows: string[], levels: number[], top: number, face: string): void {
-  const towerLv = levels.length - 1;
+function drawInfoCrown(pix: Pix, part: (x: number, y: number) => number, W: number, H: number, hr: (x: number, y: number) => number, top: number, face: string): void {
   let bottom = -1;
-  rows.forEach((row, r) => {
-    if (row.includes(String(towerLv))) bottom = r;
-  });
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (part(x, y) === 2) bottom = y;
   if (bottom < 0) return;
-  // 塔楼最前一排的左右范围
-  const front = rows[bottom];
-  const tx0 = front.indexOf(String(towerLv)) * TILE, tx1 = (front.lastIndexOf(String(towerLv)) + 1) * TILE;
+  // 塔楼最前两排的左右范围
+  let tx0 = W, tx1 = -1;
+  for (let x = 0; x < W; x++) if (part(x, bottom) === 2 || part(x, bottom - 1) === 2) (tx0 = Math.min(tx0, x)), (tx1 = Math.max(tx1, x + 1));
   const axis = (tx0 + tx1) / 2, tw = tx1 - tx0;
-  const towerRoofFront = top + (bottom + 1) * TILE - levels[towerLv];
+  const towerRoofFront = top + bottom + 1 - hr(Math.floor(axis), bottom);
   /** 画一个方塔体：底边在 base，正面高 fh，顶面进深 d；body 给正面每个像素取色 */
   const block = (w: number, fh: number, d: number, base: number, body: (x: number, y: number) => PalKey) => {
     const x0 = Math.round(axis - w / 2);
     for (let y = 0; y < fh; y++)
       for (let x = 0; x < w; x++) {
         let col = body(x, y);
-        if (x === 0) col = shade(col, +1);
-        if (x === w - 1) col = shade(col, -1);
+        if (x === 0) col = shadeKey(col, +1);
+        if (x === w - 1) col = shadeKey(col, -1);
         pix.px(x0 + x, base - fh + y, col);
       }
     pix.rect(x0, base - fh - d, w, d, 'beige1');

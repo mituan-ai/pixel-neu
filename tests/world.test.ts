@@ -45,9 +45,8 @@ describe('地图', () => {
     const axis = ofType('poi').find((p) => p.name === '北门')!.x;
     for (const name of ['信息学馆', '宁恩承图书馆']) {
       const b = ofType('building').find((o) => o.name === name)!;
-      const rows = String(b.properties!.find((p) => p.name === 'mask')!.value).split('/');
-      const cols = rows.flatMap((r) => [...r].flatMap((ch, c) => (ch !== '0' ? [c] : [])));
-      const centre = b.x + ((Math.min(...cols) + Math.max(...cols) + 1) / 2) * TILE;
+      // 建筑对象的框就是楼基外接框，两栋楼都左右对称
+      const centre = b.x + b.width / 2;
       expect(Math.abs(centre - axis), name).toBeLessThan(TILE);
     }
   });

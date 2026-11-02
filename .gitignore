@@ -6,6 +6,7 @@ data/preview.png
 .playwright-cli/
 data/sat-*.png
 data/check*.png
+data/parallax.png
 .env.local
 data/ref/
 art-inbox/*

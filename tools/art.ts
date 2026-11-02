@@ -1,15 +1,18 @@
-// 生成全部程序化美术：地面瓦片、建筑、物件、角色、表情、调色板。用法：npm run art（先 npm run map）
+// 生成全部程序化美术：建筑、物件、角色、表情、调色板（地面在 npm run map 时烘焙）。用法：npm run art（先 npm run map）
 // 产物写进 assets/，同时在 data/preview.png 拼一张全图预览（不进仓库），用来检查风格是否统一。
 // 某张图改成手绘后，把它从 HANDMADE 之外的生成列表里拿掉，避免被覆盖（规则见 assets/AGENTS.md）。
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { EMOTES } from '../shared/social.ts';
 import { FACING, VIEWS, VIEW_NAME, type View } from '../shared/view.ts';
-import { LAYER, METERS_PER_TILE, TILE, prop, type TiledMap } from '../shared/world.ts';
+import { GROUND_CHUNK, LAYER, METERS_PER_TILE, TILE, prop, type TiledMap } from '../shared/world.ts';
 import { drawAvatarSheet } from './art-avatar.ts';
-import { drawBuilding, type BuildingSpec } from './art-building.ts';
+import { drawBuilding } from './art-building.ts';
+import { loadBuildings } from './buildings.ts';
+import { toWorld } from './geo.ts';
 import { PAL, type PalKey } from './palette.ts';
 import { Pix, loadPix, rng } from './pix.ts';
-import { TILESET, TREES } from './tiles.ts';
+import { loadSurvey } from './survey.ts';
+import { TREES } from './tiles.ts';
 
 const out = (p: string) => new URL(`../assets/${p}`, import.meta.url);
 /** 每米像素（物件和树按真实尺寸画） */
@@ -21,182 +24,6 @@ function save(pix: Pix, name: string): void {
   if (HANDMADE.has(name)) return;
   pix.save(out(name));
 }
-
-// ---------- 地面瓦片 ----------
-function noise(p: Pix, seed: number, base: PalKey, dots: [PalKey, number][]): void {
-  const r = rng(seed);
-  p.rect(0, 0, TILE, TILE, base);
-  for (let y = 0; y < TILE; y++)
-    for (let x = 0; x < TILE; x++) {
-      const v = r();
-      let acc = 0;
-      for (const [c, pr] of dots) {
-        acc += pr;
-        if (v < acc) {
-          p.px(x, y, c);
-          break;
-        }
-      }
-    }
-}
-
-function drawTile(i: number): Pix {
-  const p = new Pix(TILE, TILE);
-  const r = rng(1000 + i);
-  switch (i) {
-    case 0: case 1: case 2: case 3: {
-      noise(p, 10 + i, 'grass1', [['grass2', 0.03], ['grass0', 0.015]]);
-      // 草叶：两像素高的小竖笔，只在少数瓦片上
-      for (let k = 0; k < i - 1; k++) {
-        const x = (r() * 15) | 0, y = 1 + ((r() * 14) | 0);
-        p.px(x, y, 'grass3'), p.px(x, y + 1, 'grass0');
-      }
-
-      break;
-    }
-    case 4: case 5:
-      noise(p, 20 + i, 'asph1', [['asph0', 0.1], ['asph2', 0.06]]);
-      break;
-    case 6: case 7: {
-      // 1 m 见方的石板，缝用深一档；少数石板颜色略深
-      for (let y = 0; y < TILE; y += PPM)
-        for (let x = 0; x < TILE; x += PPM) {
-          p.rect(x, y, PPM, PPM, i === 7 && x === 0 && y === 0 ? 'pave1' : 'pave2');
-          p.hline(x, y, PPM, 'pave1'), p.vline(x, y, PPM, 'pave1');
-        }
-      break;
-    }
-    case 8: case 9: {
-      // 人行道：错缝砖，红砖夹灰砖（据校园人行道照片）
-      for (let y = 0; y < TILE; y++)
-        for (let x = 0; x < TILE; x++) {
-          const row = y >> 2, off = row % 2 ? 4 : 0;
-          const joint = y % 4 === 3 || (x + off) % 8 === 7;
-          const grey = ((((x + off) >> 3) + row + i) % 5) === 0;
-          p.px(x, y, joint ? 'brick0' : grey ? 'pave1' : (x + y) % 7 === 0 ? 'brick2' : 'brick1');
-        }
-      break;
-    }
-    case 10: {
-      // 校界墙：上面是墙顶，下半是朝北（朝屏幕下方）的墙面
-      p.rect(0, 0, TILE, 6, 'wall2');
-      p.hline(0, 0, TILE, 'stone3');
-      p.rect(0, 6, TILE, 10, 'wall1');
-      for (let y = 6; y < TILE; y += 3) p.hline(0, y, TILE, 'wall0');
-      p.hline(0, 15, TILE, 'ink');
-      break;
-    }
-    case 11:
-      noise(p, 31, 'water1', [['water0', 0.12]]);
-      for (let k = 0; k < 3; k++) p.hline((r() * 10) | 0, (r() * 15) | 0, 4, 'water2');
-      break;
-    case 12: {
-      // 花坛：绿叶里点红花
-      p.rect(0, 0, TILE, TILE, 'leaf1');
-      for (let k = 0; k < 18; k++) p.px(2 + ((r() * 12) | 0), 2 + ((r() * 12) | 0), k % 4 ? 'flowerR' : 'flowerP');
-      break;
-    }
-    case 13:
-      noise(p, 33, 'hedge', [['leaf2', 0.2], ['leaf0', 0.1]]);
-      break;
-    case 14: {
-      // 校外和还没描过的地方：深灰色块，一眼看出不能进入
-      noise(p, 34, 'slate', [['ink', 0.04]]);
-      break;
-    }
-    case 52: {
-      // 广场铺装带：深一档的长条石
-      p.rect(0, 0, TILE, TILE, 'pave1');
-      for (let k = 0; k < TILE; k += 4) p.vline(k, 0, TILE, 'pave0'), p.hline(0, k, TILE, 'pave0');
-      for (let k = 1; k < TILE; k += 4) p.hline(k, k, 2, 'pave2');
-      break;
-    }
-    case 53: case 54:
-      // 林下地面：树荫里的深色草
-      noise(p, 60 + i, 'grass0', [['leaf1', 0.04], ['leaf0', 0.03]]);
-      if (i === 54) p.px(5, 9, 'grass1'), p.px(5, 10, 'leaf0');
-      break;
-    case 72: case 73:
-      // 塑胶跑道：红色颗粒面
-      noise(p, 80 + i, 'track1', [['track0', 0.12]]);
-      break;
-    case 74: case 75:
-      // 人工草：割草条纹，相邻两格深浅交替（地图按列挑）
-      noise(p, 80 + i, i === 74 ? 'grass1' : 'grass2', [['grass0', 0.03]]);
-      break;
-    case 76:
-      noise(p, 86, 'court1', [['court0', 0.06]]);
-      break;
-    case 56:
-      // 停车位线：一道 1 像素宽的白线（约 12 cm）
-      noise(p, 24, 'asph1', [['asph0', 0.1], ['asph2', 0.06]]);
-      p.vline(0, 0, TILE, 'paint');
-      break;
-    case 57: case 58: case 59: case 60: {
-      // 车道中心虚线：2 m 一段，透明底，叠在沥青上
-      const at = (i - 57) % 2 ? 0 : TILE / 2 - 1;
-      if (i < 59) p.rect(at, 4, 2, 8, 'paint');
-      else p.rect(4, at, 8, 2, 'paint');
-      break;
-    }
-    case 55:
-      noise(p, 70, 'asph0', [['shadow', 0.08], ['asph1', 0.05]]);
-      break;
-    case 15:
-      p.rect(0, 0, TILE, TILE, 'flowerR', 120);
-      break;
-    case 48: case 49:
-      noise(p, 40 + i, 'grass0', [['leaf1', 0.15], ['grass1', 0.08]]);
-      break;
-    case 50: {
-      noise(p, 50, 'asph1', [['asph0', 0.1]]);
-      for (let y = 0; y < TILE; y++) if (y % 4 < 2) p.hline(2, y, 12, 'paint');
-      break;
-    }
-    case 51:
-      p.rect(0, 0, TILE, TILE, 'pave0');
-      break;
-    case 64: case 65: case 66: case 67: case 68: case 69: case 70: case 71: {
-      // 斜边过渡：草地格的一个角填成沥青或铺装，斜边上一道路缘
-      const base = drawTile(i < 68 ? 4 : 6);
-      const corner = (i - 64) % 4; // 东北、东南、西南、西北
-      const fx = (x: number) => (corner === 0 || corner === 1 ? x : TILE - 1 - x);
-      const fy = (y: number) => (corner === 1 || corner === 2 ? y : TILE - 1 - y);
-      for (let y = 0; y < TILE; y++)
-        for (let x = 0; x < TILE; x++) {
-          const d = fx(x) + fy(y) - (TILE - 1); // 0 在斜边上，正的一侧是被填的角
-          if (d > 0) p.data.set(base.data.subarray((y * TILE + x) * 4, (y * TILE + x) * 4 + 4), (y * TILE + x) * 4);
-          else if (d === 0) p.px(x, y, 'curb');
-          else if (d === -1) p.px(x, y, 'grass0');
-        }
-      break;
-    }
-    default: {
-      // 16–31 草地边缘、32–47 路沿石：按掩码在对应边上画
-      const isGrass = i >= TILESET.grassEdge && i < TILESET.grassEdge + 16;
-      const mask = i - (isGrass ? TILESET.grassEdge : TILESET.curb);
-      if (i >= TILESET.curb + 16 || mask <= 0) break;
-      const edge = (bit: number, draw: (k: number, d: number) => void) => {
-        if (mask & bit) for (let k = 0; k < TILE; k++) for (let d = 0; d < 2; d++) draw(k, d);
-      };
-      const c0: PalKey = isGrass ? 'curb' : 'stone2', c1: PalKey = isGrass ? 'grass0' : 'stone0';
-      edge(1, (k, d) => p.px(k, d, d ? c1 : c0));
-      edge(4, (k, d) => p.px(k, TILE - 1 - d, d ? c1 : c0));
-      edge(8, (k, d) => p.px(d, k, d ? c1 : c0));
-      edge(2, (k, d) => p.px(TILE - 1 - d, k, d ? c1 : c0));
-    }
-  }
-  return p;
-}
-
-const tiles = new Pix(TILESET.columns * TILE, Math.ceil(TILESET.count / TILESET.columns) * TILE);
-const tileArt: Pix[] = [];
-for (let i = 0; i < TILESET.count; i++) {
-  const t = drawTile(i);
-  tileArt.push(t);
-  tiles.blit(t, (i % TILESET.columns) * TILE, Math.floor(i / TILESET.columns) * TILE);
-}
-save(tiles, 'tiles.png');
 
 // ---------- 物件 ----------
 // 每个物件一张小图，脚底（锚点）在 (ax, ay)。合成一张图集 props.png + props.json
@@ -521,6 +348,195 @@ function car(paint: number, head: number): PropArt {
   return { pix: p, ax: x0 + sw / 2, ay: gy + sd / 2 };
 }
 
+/**
+ * 足球门：宽 7.32 m、高 2.44 m（规则尺寸），网兜进深约 2 m。世界朝向下（rot 0）门口朝南、网兜在北。
+ * 白色门框，网画成稀疏的浅色点；门口朝屏幕上方时网兜在前，先画门框再画网
+ */
+function goal(v: View): PropArt {
+  const mouth = screenSide(v, 'S');
+  const Wm = Math.round(7.32 * PPM), D = 2 * PPM, Z = Math.round(2.44 * PPM);
+  const along = mouth % 2 === 0; // 门口这条边在屏幕上是横的
+  const sw = along ? Wm : D, sd = along ? D : Wm;
+  const p = new Pix(sw + 4, sd + Z + 4);
+  const ox = 2, oy = Z + 2;
+  const at = (x: number, y: number, z: number, c: PalKey, a = 255) => p.px(ox + x, oy + y - z, c, a);
+  // 门口那条边上的两点（屏幕地面坐标）和网兜方向
+  const [m0, m1]: [number, number][] = mouth === 2 ? [[0, sd - 1], [sw - 1, sd - 1]] : mouth === 0 ? [[0, 0], [sw - 1, 0]] : mouth === 1 ? [[sw - 1, 0], [sw - 1, sd - 1]] : [[0, 0], [0, sd - 1]];
+  const back: [number, number] = mouth === 2 ? [0, -(sd - 1)] : mouth === 0 ? [0, sd - 1] : mouth === 1 ? [-(sw - 1), 0] : [sw - 1, 0];
+  const frame = () => {
+    const n = Math.max(Math.abs(m1[0] - m0[0]), Math.abs(m1[1] - m0[1]));
+    for (let k = 0; k <= n; k++) at(m0[0] + ((m1[0] - m0[0]) * k) / n, m0[1] + ((m1[1] - m0[1]) * k) / n, Z, 'white');
+    for (const [x, y] of [m0, m1]) for (let z = 0; z <= Z; z++) at(x, y, z, z === 0 ? 'stone1' : 'white');
+  };
+  const net = () => {
+    // 网兜：顶面和后面，向后斜收到地面
+    const n = Math.max(Math.abs(m1[0] - m0[0]), Math.abs(m1[1] - m0[1]));
+    for (let k = 0; k <= n; k += 2)
+      for (let t = 0; t <= 1; t += 1 / D) {
+        const x = m0[0] + ((m1[0] - m0[0]) * k) / n + back[0] * t, y = m0[1] + ((m1[1] - m0[1]) * k) / n + back[1] * t;
+        at(x, y, Math.round(Z * (1 - t * 0.6)), 'stone3', 150);
+        if (t > 0.95) for (let z = 0; z < Z * 0.4; z += 2) at(x, y, z, 'stone3', 150);
+      }
+  };
+  if (mouth === 0) frame(), net();
+  else net(), frame();
+  return { pix: p, ax: ox + sw / 2, ay: oy + sd / 2 };
+}
+
+/** 篮球架：S26 标准篮高 3.05 m、篮板 1.8×1.05 m，杆后置，篮板朝世界南。 */
+function hoop(v: View): PropArt {
+  const p = new Pix(40, 56), ax = 20, ay = 44;
+  const project = (x: number, y: number, z: number): [number, number] => {
+    const [sx, sy] = v === 0 ? [x, y] : v === 1 ? [y, -x] : v === 2 ? [-x, -y] : [-y, x];
+    return [ax + sx * PPM, ay + (sy - z) * PPM];
+  };
+  const edge = (a: [number, number, number], b: [number, number, number], c: PalKey) => {
+    const [x0, y0] = project(...a), [x1, y1] = project(...b), n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0)));
+    for (let k = 0; k <= n; k++) p.px(x0 + ((x1 - x0) * k) / n, y0 + ((y1 - y0) * k) / n, c);
+  };
+  shadowAt(p, ax + 3, ay + 1, 6, 2);
+  p.rect(ax - 3, ay - 2, 6, 4, 'stone1');
+  for (const dx of [-0.1, 0, 0.1]) edge([dx, 0, 0], [dx, 0, 3.5], 'leaf0');
+  edge([0, 0, 3.5], [0, 1.2, 3.5], 'leaf0');
+  for (let z = 2.9; z <= 3.95; z += 1 / PPM) edge([-0.9, 1.2, z], [0.9, 1.2, z], 'stone3');
+  for (const z of [2.9, 3.95]) edge([-0.9, 1.2, z], [0.9, 1.2, z], 'grey0');
+  for (const x of [-0.9, 0.9]) edge([x, 1.2, 2.9], [x, 1.2, 3.95], 'grey0');
+  if (screenSide(v, 'S') === 2) {
+    for (const z of [3.05, 3.5]) edge([-0.3, 1.21, z], [0.3, 1.21, z], 'flowerR');
+    for (const x of [-0.3, 0.3]) edge([x, 1.21, 3.05], [x, 1.21, 3.5], 'flowerR');
+  }
+  for (let a = 0; a < Math.PI * 2; a += 0.15) {
+    const x = Math.cos(a) * 0.225, y = 1.5 + Math.sin(a) * 0.225;
+    const [px, py] = project(x, y, 3.05);
+    p.px(px, py, 'flowerR');
+    if (Math.round(a * 10) % 3 === 0) edge([x, y, 3.0], [x * 0.6, 1.5 + (y - 1.5) * 0.6, 2.65], 'stone2');
+  }
+  return { pix: p, ax, ay };
+}
+
+/** 南门门柱：据 S24 和 S7 暂估宽 3 m、深 4 m、高 7.5 m。 */
+function southPillar(v: View): PropArt {
+  const { sw, sd } = boxView(v, 3 * PPM, 4 * PPM), h = 7.5 * PPM;
+  const p = new Pix(sw + 10, sd + h + 8), x0 = 3, ground = sd + h + 3;
+  p.rect(x0, ground - h, sw, h, 'grey2');
+  p.rect(x0, ground - h, 2, h, 'grey3');
+  p.rect(x0 + sw - 2, ground - h, 2, h, 'grey0');
+  p.rect(x0, ground - h - sd, sw, sd, 'grey3');
+  p.hline(x0, ground - 3, sw, 'grey0');
+  p.outline('ink');
+  shadowUnder(p, x0 + sw / 2 + 3, ground - sd / 2 + 2, sw / 2, sd / 2);
+  return { pix: p, ax: x0 + sw / 2, ay: ground - sd / 2 };
+}
+
+/** 南门门楼横梁：据 S24 暂估总宽 24 m、净高 4.5 m，未见的背面用中性墙。 */
+function southBeam(v: View): PropArt {
+  const { sw, sd } = boxView(v, 24 * PPM, 4 * PPM), h = 7.5 * PPM, clear = 4.5 * PPM;
+  const p = new Pix(sw + 10, sd + h + 8), x0 = 3, ground = sd + h + 3;
+  p.rect(x0, ground - h, sw, h - clear, 'grey2');
+  p.hline(x0, ground - clear - 1, sw, 'grey0');
+  p.rect(x0, ground - h - sd, sw, sd, 'grey3');
+  if (screenSide(v, 'S') === 2) {
+    for (let x = x0 + 12; x < x0 + sw - 12; x += 18) {
+      p.rect(x, ground - h + 3, 10, 6, 'glass0');
+      p.vline(x + 4, ground - h + 3, 6, 'grey1');
+    }
+    // 校名是繁体「東北大學」，深色，四字沿墙面等距排开（R-gates-01-02）
+    const step = Math.floor((sw - 24) / 4), gy = ground - clear - 13;
+    NAME_GLYPHS.forEach((g, k) => g.slice(1).forEach((row, y) => [...row].forEach((ch, x) => ch === '#' && p.px(x0 + 12 + k * step + ((step - 12) >> 1) + x, gy + y, 'grey0'))));
+  }
+  p.outline('ink');
+  return { pix: p, ax: x0 + sw / 2, ay: ground - sd / 2 };
+}
+
+/** 长征五号模型：S21 的白色芯级和四枚助推器，S22 人高参照与 S27 的 1:5 比例暂估体量。 */
+function rocket(v: View): PropArt {
+  const p = new Pix(56, 152), ax = 26, ay = 130;
+  const project = (x: number, y: number): [number, number] => v === 0 ? [x, y] : v === 1 ? [y, -x] : v === 2 ? [-x, -y] : [-y, x];
+  p.rect(ax - 16, ay - 32, 32, 32, 'brick1');
+  p.rect(ax - 16, ay, 32, 16, 'brick0');
+  p.hline(ax - 16, ay, 32, 'brick2');
+  const tubes = [[0, 0, 1, 11.4], [-1.05, 0, 0.67, 7], [1.05, 0, 0.67, 7], [0, -1.05, 0.67, 7], [0, 1.05, 0.67, 7]];
+  tubes.sort((a, b) => project(a[0], a[1])[1] - project(b[0], b[1])[1]);
+  for (const [x, y, d, h] of tubes) {
+    const [sx, sy] = project(x, y), cx = Math.round(ax + sx * PPM), base = Math.round(ay + sy * PPM - 2 * PPM), w = Math.round(d * PPM), ht = Math.round(h * PPM);
+    p.rect(cx - w / 2, base - ht + 5, w, ht - 5, 'stone3');
+    p.vline(cx + w / 2 - 1, base - ht + 5, ht - 5, 'grey1');
+    for (let k = 0; k < 5; k++) p.hline(cx - (w * (k + 1)) / 10, base - ht + k, (w * (k + 1)) / 5, 'white');
+    p.hline(cx - w / 2, base - 9, w, 'slate');
+    p.hline(cx - w / 2, base - ht + 6, w, 'slate');
+    p.rect(cx - w / 2 + 1, base, w - 2, 2, 'grey0');
+    if (d === 1 && screenSide(v, 'S') === 2) {
+      p.rect(cx - 2, base - ht + 3, 4, 2, 'flowerR');
+      for (let yy = base - ht + 11; yy < base - 12; yy += 3) p.px(cx, yy, 'flowerR');
+    }
+  }
+  p.outline('ink');
+  shadowUnder(p, ax + 5, ay + 3, 21, 13);
+  return { pix: p, ax, ay };
+}
+
+/** 刘长春像：S25 可见运动服、垂臂与前伸的左脚，基座和总高按附近成人 1.7 m 暂估。 */
+function liuStatue(v: View): PropArt {
+  const p = new Pix(38, 66), ax = 18, ay = 52;
+  const ground = ay + 10;
+  p.rect(ax - 10, ground - 32, 20, 20, 'brick1');
+  p.rect(ax - 10, ground - 12, 20, 12, 'brick0');
+  p.hline(ax - 10, ground - 12, 20, 'brick2');
+  p.rect(ax - 11, ground - 1, 22, 2, 'grey0');
+  const base = ay - 13, front = screenSide(v, 'W') === 2, back = screenSide(v, 'W') === 0;
+  const w = front || back ? 7 : 5;
+  p.rect(ax - w / 2, base - 18, w, 10, 'statue1');
+  p.rect(ax - w / 2, base - 8, w, 4, 'statue0');
+  p.ellipse(ax, base - 21, 2, 3, 'statue1');
+  p.hline(ax - 2, base - 23, 4, 'statue0');
+  for (const dx of [-w / 2 - 1, w / 2]) p.rect(ax + dx, base - 16, 1, 11, 'statue0');
+  p.rect(ax - 3, base - 4, 2, 5, 'statue1');
+  p.rect(ax + 1, base - 4, 2, 5, 'statue1');
+  p.hline(ax - 4, base + 1, 4, 'statue0');
+  p.hline(ax + 1, base, 3, 'statue0');
+  if (front) {
+    p.px(ax - 1, base - 21, 'statue0'), p.px(ax + 1, base - 21, 'statue0');
+    p.hline(ax - 2, base - 15, 4, 'statue2');
+    p.rect(ax - 4, ground - 10, 8, 1, 'gold');
+  } else if (!back) p.px(ax + (v === 0 ? -3 : 3), base - 21, 'statue2');
+  p.outline('ink');
+  shadowUnder(p, ax + 4, ay + 2, 13, 10);
+  return { pix: p, ax, ay };
+}
+
+/** 一二九群雕：据 S23 概括斜升旗面和七个前排人物，约 9×3 m、高 6 m，背面细节未取得。 */
+function movement129(v: View): PropArt {
+  const { sw, sd } = boxView(v, 9 * PPM, 3 * PPM), h = 6 * PPM;
+  const p = new Pix(sw + 12, sd + h + 12), ax = sw / 2 + 4, ay = sd / 2 + h + 5;
+  const project = (x: number, y: number, z: number): [number, number] => {
+    const [sx, sy] = v === 0 ? [x, y] : v === 1 ? [y, -x] : v === 2 ? [-x, -y] : [-y, x];
+    return [ax + sx * PPM, ay + (sy - z) * PPM];
+  };
+  const front = screenSide(v, 'S') === 2;
+  for (let x = -4.5; x <= 4.5; x += 1 / PPM) {
+    const ztop = 4 + ((x + 4.5) / 9) * 2;
+    for (let z = v === 2 ? 0 : 1.3; z <= ztop; z += 1 / PPM) {
+      const [sx, sy] = project(x, -0.6, z);
+      p.px(sx, sy, v === 2 ? 'brick0' : 'brick1');
+    }
+  }
+  if (v !== 2) {
+    const people = [-3, -2, -1, 0, 1, 2, 3].map((x) => ({ x, at: project(x, 0.6, 0) })).sort((a, b) => a.at[1] - b.at[1]);
+    for (const { x, at: [sx, sy] } of people) {
+      p.rect(sx - 2, sy - 22, 5, 15, 'brick2');
+      p.ellipse(sx, sy - 25, 2, 3, 'brick2');
+      p.rect(sx - 2, sy - 7, 2, 8, 'brick1');
+      p.rect(sx + 1, sy - 7, 2, 8, 'brick1');
+      p.vline(sx - 3, sy - 20, 13, 'brick0');
+      if (front) p.px(sx - 1, sy - 25, 'brick0'), p.px(sx + 1, sy - 25, 'brick0');
+      if (x === -1 || x === 2) p.rect(sx + 3, sy - 31, 2, 14, 'brick2');
+    }
+  }
+  p.outline('ink');
+  shadowUnder(p, ax + 4, ay + 3, sw / 2, sd / 2);
+  return { pix: p, ax, ay };
+}
+
 /** 物件图集的键：四个视角各画一张的物件叫「名字@N」等，地图里只写名字 */
 const PROPS: Record<string, PropArt> = {
   'big-book': sculpture(),
@@ -535,6 +551,15 @@ for (const v of VIEWS) {
   PROPS[k('library-steps')] = rotCCW(librarySteps(), v);
   PROPS[k('stall')] = rotCCW(stall(), v);
   PROPS[k('ev-charger')] = evCharger(v);
+  PROPS[k('goal')] = goal(v);
+  PROPS[k('hoop')] = hoop(v);
+  PROPS[k('gate-south-pillar')] = southPillar(v);
+  PROPS[k('gate-south-beam')] = southBeam(v);
+  PROPS[k('rocket')] = rocket(v);
+  PROPS[k('liu-statue')] = liuStatue(v);
+  PROPS[k('movement-129')] = movement129(v);
+  PROPS[k('park-sculpture')] = sculpture();
+  PROPS[k('energy-sphere')] = sculpture();
   // 车头朝北的车在各视角下屏幕上的车头朝向：上北朝上，上东朝左，上南朝下，上西朝右
   CAR_PAINT.forEach((_, i) => (PROPS[`car-${i}@${VIEW_NAME[v]}`] = car(i, [0, 3, 2, 1][v])));
 }
@@ -620,18 +645,18 @@ if (!objLayer || objLayer.type !== 'objectgroup') throw new Error('地图缺少 
 mkdirSync(out('buildings'), { recursive: true });
 for (const f of readdirSync(out('buildings'))) rmSync(new URL(f, out('buildings/')));
 const buildingArt = new Map<string, Pix>();
-for (const o of objLayer.objects.filter((o) => o.type === 'building')) {
-  const spec: BuildingSpec = {
-    sprite: prop(o, 'sprite', ''),
-    style: prop(o, 'style', 'plain'),
-    mask: prop(o, 'mask', ''),
-    levels: prop(o, 'levels', '0'),
-    top: prop(o, 'top', 0),
-  };
-  for (const v of VIEWS) {
-    const pix = drawBuilding(spec, v);
-    if (v === 0) buildingArt.set(spec.sprite, pix);
-    save(pix, `buildings/${spec.sprite}-${VIEW_NAME[v]}.png`);
+{
+  // 楼的模型和地图工具算的是同一份（buildings.ts），地图里留下的楼才画
+  const osm = JSON.parse(readFileSync(new URL('../data/osm.json', import.meta.url), 'utf8'));
+  const gate = osm.elements.find((e: { tags: Record<string, string> }) => e.tags.name === '北门');
+  const models = new Map(loadBuildings(osm, loadSurvey(), toWorld(gate.lat, gate.lon)[0]).map((b) => [`b${b.id}`, b]));
+  for (const o of objLayer.objects.filter((o) => o.type === 'building')) {
+    const sprite = prop(o, 'sprite', '');
+    for (const v of VIEWS) {
+      const pix = drawBuilding(models.get(sprite)!, v);
+      if (v === 0) buildingArt.set(sprite, pix);
+      save(pix, `buildings/${sprite}-${VIEW_NAME[v]}.png`);
+    }
   }
 }
 
@@ -652,10 +677,11 @@ for (const o of objLayer.objects.filter((o) => o.type === 'building')) {
 {
   const W = map.width, H = map.height;
   const pv = new Pix(W * TILE, H * TILE);
-  for (const name of [LAYER.ground, LAYER.edges]) {
-    const l = map.layers.find((x) => x.name === name);
-    if (!l || l.type !== 'tilelayer') continue;
-    l.data.forEach((g, i) => g && pv.blit(tileArt[g - TILESET.firstgid], (i % W) * TILE, Math.floor(i / W) * TILE));
+  // 地面分块图按位置拼回去
+  for (const f of readdirSync(out('ground'))) {
+    const [cx, cy] = f.slice(0, -4).split('-').map(Number);
+    const g = loadPix(new URL(f, out('ground/')));
+    for (let y = 0; y < g.h; y++) pv.data.set(g.data.subarray(y * g.w * 4, (y + 1) * g.w * 4), ((cy * GROUND_CHUNK + y) * pv.w + cx * GROUND_CHUNK) * 4);
   }
   // 建筑与物件按脚底 y 排序后画
   const draws: { y: number; fn: () => void }[] = [];
@@ -673,4 +699,4 @@ for (const o of objLayer.objects.filter((o) => o.type === 'building')) {
   mkdirSync(new URL('../data/', import.meta.url), { recursive: true });
   pv.save(new URL('../data/preview.png', import.meta.url));
 }
-console.log(`美术已生成：tiles.png、${buildingArt.size} 栋建筑、${Object.keys(PROPS).length} 种物件、avatar.png、emotes.png`);
+console.log(`美术已生成：${buildingArt.size} 栋建筑、${Object.keys(PROPS).length} 种物件、avatar.png、emotes.png`);

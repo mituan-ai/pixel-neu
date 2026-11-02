@@ -17,15 +17,16 @@
 - 全图固定上北，小地图跟随当前视角旋转。
 - 世界常量只在 `shared/world.ts` 定义。
 - 世界米坐标的原点固定（`tools/geo.ts` 的 ORIGIN），扩图只改 EXTENT，扩出去的地方坐标可以是负数。survey.json 和文档里的坐标永远不用迁移。
-- 楼基以卫星图上的墙脚为准，不能直接用 OSM 轮廓：斜拍的楼顶会偏，楼越高偏得越多。每栋楼都要在 survey.json 里写 shift、lean 或确认无偏移，量法见 `tools/survey.ts`。
+- 楼基以卫星图上的墙脚为准，不能直接用 OSM 轮廓：斜拍的楼顶会偏，楼越高偏得越多。每栋楼都要在 survey.json 里写 shift 或确认无偏移，量法见 `tools/survey.ts`。lean 只用在 OSM 轮廓把楼顶和露出的立面描在一起的楼上，只描了楼顶的楼用 lean 会把楼切瘦。
+- 地面按 1 m = 8 px 逐像素画好，烘焙成 `assets/ground/` 的分块图；碰撞 1 m 一格（`shared/world.ts` 的 `CELL`）。
 
 ## 目录
 
 ```
 art/      公开美术仓库 mituan-ai/pixel-neu-art 的 git 子模块：物件 props/、立面 facades/、Q 版角色底模和发型 chibi/。npm run art 读它们生成 assets/；投稿规范见 art/CONTRIBUTING.md
 art-inbox/ 美术草稿与第三方候选素材，审核通过的移到 art/；约束见 art-inbox/AGENTS.md，除该文件外不进仓库
-assets/   运行时资源（Vite publicDir），美术约束见 assets/AGENTS.md
-data/     原始资料：osm.json（OSM）、survey.json（从卫星图描的地面、树、楼基校正）；sat-*.png、check.png、ref/（照片和视频截图）是本地参考，不进仓库
+assets/   运行时资源（Vite publicDir），美术约束见 assets/AGENTS.md；ground/ 是 npm run map 烘焙的地面分块
+data/     原始资料：osm.json（OSM）、survey.json（从卫星图描的地面、树、楼基校正）；sat-*.png、check.png、parallax.png、ref/（照片和视频截图）是本地参考，不进仓库
 docs/     sources.md：资料来源与待核实；refs/：各区域参考资料的文字索引；codex/：给 Codex 的通用提示词和任务单
 server/   Colyseus 服务端
 shared/   前后端和工具共用：world.ts、social.ts、state.ts、view.ts（四视角换算）
@@ -47,7 +48,8 @@ npm run typecheck  类型检查
 npm run osm        重新抓 OSM 到 data/osm.json
 npm run sat        抓卫星图到 data/sat-<来源>.png（-- 来源，见 tools/geo.ts）
 npm run check      对照图 data/check.png（-- [来源] x0 y0 x1 y1 每米像素）
-npm run map        生成 assets/map.json
+npm run parallax   两期卫星图视差测楼高和楼基，输出建议值和 data/parallax.png（-- x0 y0 x1 y1）
+npm run map        生成 assets/map.json、地面分块 assets/ground/ 和小地图 assets/minimap.png
 npm run art        生成美术，并输出 data/preview.png
 ```
 

@@ -5,8 +5,8 @@
 import Phaser from 'phaser';
 import { AVATAR, DIR, PHRASES, cleanLook, type Look } from '../shared/social.ts';
 import type { Player } from '../shared/state.ts';
-import { VIEW_NAME, cellToView, dirFromView, dirToView, fromView, rotateGrid, toView, viewSize, type View } from '../shared/view.ts';
-import { DEV_BOOST, LAYER, TILE, WALK_SPEED, Walkable, prop, type TiledMap, type TiledObject } from '../shared/world.ts';
+import { VIEW_NAME, dirFromView, dirToView, fromView, toView, viewSize, type View } from '../shared/view.ts';
+import { DEV_BOOST, GROUND_CHUNK, LAYER, TILE, WALK_SPEED, Walkable, prop, type TiledMap, type TiledObject } from '../shared/world.ts';
 import { Avatar, GHOST_DEPTH, display } from './avatar.ts';
 import type { Net, NetHandlers } from './net.ts';
 
@@ -36,8 +36,6 @@ const BUBBLE_MS = 3500;
 const LABEL_LIFT = 27;
 /** 顶到障碍时，最多往旁边找几像素的空位绕过去（够绕开 6 m 宽的校训石） */
 const NUDGE = 4 * TILE;
-/** 不随视角转的瓦片：校界墙的墙面永远朝屏幕下方 */
-const UPRIGHT_TILES = new Set([10]);
 /** 缩放只用整数倍（像素保持方正）：1 倍看得远，4 倍看细节 */
 export const ZOOM_MIN = 1;
 export const ZOOM_MAX = 4;
@@ -70,7 +68,11 @@ export class CampusScene extends Phaser.Scene {
   /** 上次剔除时相机所在的方块范围，没变就不重算 */
   private cullAt = '';
   private view: View = 0;
-  private tilesPerView = 0;
+  /** 已经摆出来的地面分块（键是「列-行」），换视角时清空重摆；纹理按视野加载和卸载 */
+  private groundImgs = new Map<string, Phaser.GameObjects.Image>();
+  private groundAt = '';
+  /** 已经交给加载器、还没加载完的地面块 */
+  private groundLoading = new Set<string>();
   /** 视角变了通知界面（小地图跟着转） */
   onView?: (v: View) => void;
   private uiLayer!: Phaser.GameObjects.Layer;
@@ -108,8 +110,6 @@ export class CampusScene extends Phaser.Scene {
   }
 
   preload(): void {
-    this.load.tilemapTiledJSON('map', this.mapData as unknown as object);
-    this.load.image('tiles', 'tiles.png');
     this.load.spritesheet('avatar', 'avatar.png', { frameWidth: AVATAR.w, frameHeight: AVATAR.h });
     this.load.spritesheet('emotes', 'emotes.png', { frameWidth: 18, frameHeight: 18 });
     this.load.image('props', 'props.png');
@@ -137,7 +137,6 @@ export class CampusScene extends Phaser.Scene {
     this.worldLayer.add([this.dest, this.destGhost]);
     this.tweens.add({ targets: this.dest, scale: 1.25, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
-    this.makeRotatedTiles();
     const meta = this.cache.json.get('props-meta') as Record<string, { x: number; y: number; w: number; h: number }>;
     const tex = this.textures.get('props');
     for (const [name, m] of Object.entries(meta)) tex.add(name, 0, m.x, m.y, m.w, m.h);
@@ -296,6 +295,7 @@ export class CampusScene extends Phaser.Scene {
     for (const a of this.others.values()) this.moveRemote(a, dt);
     this.followCamera(dt);
     this.cull();
+    this.updateGround();
     this.placeDest();
     this.updateOverlays();
     this.checkPoi();
@@ -303,31 +303,14 @@ export class CampusScene extends Phaser.Scene {
 
   // ---------- 世界 ----------
 
-  /** 瓦片集的四个转向版本竖着排在一张图里：第 v 段是逆时针转了 v 个 90° 的（世界东边转到屏幕上方） */
-  private makeRotatedTiles(): void {
-    const img = this.textures.get('tiles').getSourceImage() as HTMLImageElement;
-    const cols = img.width / TILE, rows = img.height / TILE;
-    this.tilesPerView = cols * rows;
-    const canvas = this.textures.createCanvas('tiles-rot', img.width, img.height * 4)!;
-    const ctx = canvas.getContext();
-    for (let v = 0; v < 4; v++)
-      for (let r = 0; r < rows; r++)
-        for (let c = 0; c < cols; c++) {
-          ctx.save();
-          ctx.translate(c * TILE + TILE / 2, (v * rows + r) * TILE + TILE / 2);
-          if (!UPRIGHT_TILES.has(r * cols + c)) ctx.rotate((-v * Math.PI) / 2);
-          ctx.drawImage(img, c * TILE, r * TILE, TILE, TILE, -TILE / 2, -TILE / 2, TILE, TILE);
-          ctx.restore();
-        }
-    canvas.refresh();
-  }
-
   private buildScenery(): void {
     for (const o of this.scenery) o.destroy();
     this.scenery = [];
     this.culled = [];
     this.cullAt = '';
-    this.buildGround();
+    for (const img of this.groundImgs.values()) img.destroy();
+    this.groundImgs.clear();
+    this.groundAt = '';
     this.buildBuildings();
     this.buildProps();
     this.buildFences();
@@ -361,49 +344,76 @@ export class CampusScene extends Phaser.Scene {
     }
   }
 
-  private buildGround(): void {
-    const { width: cols, height: rows } = this.mapData;
-    const s = viewSize(this.view, cols, rows);
-    const map = this.make.tilemap({ tileWidth: TILE, tileHeight: TILE, width: s.w, height: s.h });
-    const ts = map.addTilesetImage('tiles-rot', 'tiles-rot', TILE, TILE, 0, 0, 0)!;
-    const perView = this.tilesPerView;
-    for (const [i, name] of [LAYER.ground, LAYER.edges].entries()) {
-      const src = this.mapData.layers.find((l) => l.name === name);
-      if (src?.type !== 'tilelayer') continue;
-      const layer = map.createBlankLayer(`${name}-${this.view}`, ts)!;
-      src.data.forEach((g, k) => {
-        if (!g) return;
-        const t = g - 1, [vc, vr] = cellToView(this.view, cols, rows, k % cols, Math.floor(k / cols));
-        layer.putTileAt(UPRIGHT_TILES.has(t) ? t : t + this.view * perView, vc, vr);
-      });
-      layer.setDepth(-10 + i);
-      this.keep(layer);
+  /**
+   * 地面分块图（地图工具烘焙的 assets/ground/<列>-<行>.png）：视野外扩一块以内的加载并摆出来，
+   * 外扩两块以外的卸掉纹理。分块按世界朝向画，换视角时整块转 90° 的倍数
+   */
+  private updateGround(): void {
+    const v = this.cameras.main.worldView;
+    const a = this.fromView(v.x, v.y), b = this.fromView(v.right, v.bottom);
+    const box = (pad: number) => [Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y)].map((q, k) => Math.floor(q / GROUND_CHUNK) + (k < 2 ? -pad : pad));
+    const [c0, r0, c1, r1] = box(1);
+    const at = `${this.view},${c0},${r0},${c1},${r1}`;
+    if (at === this.groundAt) return;
+    this.groundAt = at;
+    const { w, h } = this.worldPx;
+    const want = new Set<string>();
+    for (let r = Math.max(0, r0); r <= Math.min(r1, Math.ceil(h / GROUND_CHUNK) - 1); r++)
+      for (let c = Math.max(0, c0); c <= Math.min(c1, Math.ceil(w / GROUND_CHUNK) - 1); c++) want.add(`${c}-${r}`);
+    for (const k of want) {
+      if (this.groundImgs.has(k)) continue;
+      if (this.textures.exists(`g${k}`)) this.placeChunk(k);
+      else if (!this.groundLoading.has(k)) {
+        this.groundLoading.add(k);
+        this.load.image(`g${k}`, `ground/${k}.png`);
+        this.load.once(`filecomplete-image-g${k}`, () => {
+          this.groundLoading.delete(k);
+          this.placeChunk(k);
+        });
+      }
+    }
+    if (!this.load.isLoading()) this.load.start();
+    // 卸掉离得远的
+    const [d0, e0, d1, e1] = box(2);
+    for (const [k, img] of this.groundImgs) {
+      const [c, r] = k.split('-').map(Number);
+      if (c >= d0 && c <= d1 && r >= e0 && r <= e1) continue;
+      img.destroy();
+      this.groundImgs.delete(k);
+      this.textures.remove(`g${k}`);
     }
   }
 
+  private placeChunk(k: string): void {
+    if (this.groundImgs.has(k)) return;
+    const [c, r] = k.split('-').map(Number);
+    const src = this.textures.get(`g${k}`).getSourceImage();
+    const p = this.toView(c * GROUND_CHUNK + src.width / 2, r * GROUND_CHUNK + src.height / 2);
+    const img = this.add.image(p.x, p.y, `g${k}`).setAngle(-90 * this.view).setDepth(-10);
+    this.worldLayer.add(img);
+    this.groundImgs.set(k, img);
+  }
+
   /**
-   * 建筑按列切成几段，每段的深度取这一列占地最靠前（屏幕最下）的那一排：
+   * 建筑按 16 像素一列切成几段，每段的深度取这一列楼基最靠前（屏幕最下）的那一行（地图里的 front）：
    * U 形楼的院子里，人会正确地站在后楼前面、前楼后面
    */
   private buildBuildings(): void {
     for (const o of this.objects('building')) {
       const key = `${prop(o, 'sprite', '')}-${VIEW_NAME[this.view]}`;
       const top = prop(o, 'top', 0);
-      const rows = rotateGrid(this.view, prop(o, 'mask', '').split('/').map((r) => [...r]));
+      const fronts = Object.fromEntries(prop(o, 'front', '').split('|').map((f) => [f[0], f.slice(2).split(',').map(Number)]));
+      const base: number[] = fronts[VIEW_NAME[this.view]];
       const a = this.toView(o.x, o.y), b = this.toView(o.x + o.width, o.y + o.height);
       const x0 = Math.min(a.x, b.x), y0 = Math.min(a.y, b.y);
       const tex = this.textures.get(key).getSourceImage() as HTMLImageElement;
-      const base = rows[0].map((_, c) => {
-        for (let r = rows.length - 1; r >= 0; r--) if (rows[r][c] !== '0') return r;
-        return -1;
-      });
       let c0 = 0;
       for (let c = 1; c <= base.length; c++) {
         if (c < base.length && base[c] === base[c0]) continue;
         const last = c === base.length;
         const w = last ? tex.width - c0 * TILE : (c - c0) * TILE;
         const img = this.add.image(x0, y0 - top, key).setOrigin(0, 0).setCrop(c0 * TILE, 0, w, tex.height);
-        img.setDepth(base[c0] >= 0 ? y0 + (base[c0] + 1) * TILE : 0);
+        img.setDepth(base[c0] >= 0 ? y0 + base[c0] + 1 : 0);
         this.keep(img, img.getBounds());
         c0 = c;
       }

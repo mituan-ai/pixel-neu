@@ -3,6 +3,10 @@
 /** 一格的像素边长；一格 = METERS_PER_TILE 米，即 1 m = 8 px。地面和楼高同一比例 */
 export const TILE = 16;
 export const METERS_PER_TILE = 2;
+/** 碰撞格的像素边长：1 m 一格，比地面格细一倍，墙脚和路沿的误差在半米以内 */
+export const CELL = 8;
+/** 地面分块图（assets/ground/<列>-<行>.png）的像素边长，地图右边和下边的块可能更小 */
+export const GROUND_CHUNK = 512;
 
 /** 步行速度（像素/秒）：约 10 m/s，北门走到图书馆半分钟出头 */
 export const WALK_SPEED = 80;
@@ -12,8 +16,8 @@ export const DEV_BOOST = 5;
 /** 角色脚下的碰撞盒（像素，以脚底中心为原点） */
 export const FOOT = { w: 10, h: 6 };
 
-/** 地图图层名：工具生成、客户端渲染、服务端校验都按这些名字找 */
-export const LAYER = { ground: 'ground', edges: 'edges', blocked: 'blocked', objects: 'objects' } as const;
+/** 地图图层名：工具生成、客户端渲染、服务端校验都按这些名字找。地面不在地图里，是烘焙好的分块图 */
+export const LAYER = { blocked: 'blocked', objects: 'objects' } as const;
 
 /** Tiled JSON 里我们用到的部分 */
 export interface TiledMap {
@@ -42,8 +46,12 @@ export interface TiledObject {
   polyline?: { x: number; y: number }[];
   properties?: TiledProperty[];
 }
+/**
+ * runs：碰撞格（CELL 见方，width × height 格）按行展开后的行程编码，从「可走」开始，可走、不可走交替的长度。
+ * 不是 Tiled 的标准图层，只有我们自己读
+ */
 export type TiledLayer =
-  | { type: 'tilelayer'; name: string; width: number; height: number; data: number[]; visible: boolean }
+  | { type: 'runs'; name: string; width: number; height: number; runs: number[] }
   | { type: 'objectgroup'; name: string; objects: TiledObject[]; visible: boolean };
 
 export function prop<T extends string | number | boolean>(o: { properties?: TiledProperty[] }, name: string, fallback: T): T {
@@ -51,7 +59,7 @@ export function prop<T extends string | number | boolean>(o: { properties?: Tile
   return (p ? p.value : fallback) as T;
 }
 
-/** 不可走的格子（建筑脚下、墙、水、校外等），客户端碰撞和服务端校验用同一份 */
+/** 不可走的碰撞格（建筑脚下、墙、水、校外等，1 m 一格），客户端碰撞和服务端校验用同一份 */
 export class Walkable {
   readonly w: number;
   readonly h: number;
@@ -59,10 +67,15 @@ export class Walkable {
 
   constructor(map: TiledMap) {
     const layer = map.layers.find((l) => l.name === LAYER.blocked);
-    if (!layer || layer.type !== 'tilelayer') throw new Error('地图缺少 blocked 图层');
+    if (!layer || layer.type !== 'runs') throw new Error('地图缺少 blocked 图层');
     this.w = layer.width;
     this.h = layer.height;
-    this.blocked = Uint8Array.from(layer.data, (g) => (g ? 1 : 0));
+    this.blocked = new Uint8Array(this.w * this.h);
+    let at = 0;
+    layer.runs.forEach((n, k) => {
+      if (k % 2) this.blocked.fill(1, at, at + n);
+      at += n;
+    });
   }
 
   tileBlocked(tx: number, ty: number): boolean {
@@ -72,28 +85,29 @@ export class Walkable {
 
   /** 脚底在 (x, y) 时碰撞盒是否碰到不可走的格子 */
   footBlocked(x: number, y: number): boolean {
-    const x0 = Math.floor((x - FOOT.w / 2) / TILE);
-    const x1 = Math.floor((x + FOOT.w / 2 - 1) / TILE);
-    const y0 = Math.floor((y - FOOT.h) / TILE);
-    const y1 = Math.floor((y - 1) / TILE);
+    const x0 = Math.floor((x - FOOT.w / 2) / CELL);
+    const x1 = Math.floor((x + FOOT.w / 2 - 1) / CELL);
+    const y0 = Math.floor((y - FOOT.h) / CELL);
+    const y1 = Math.floor((y - 1) / CELL);
     for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) if (this.tileBlocked(tx, ty)) return true;
     return false;
   }
 
   /**
    * 点击行走的路线：按格子做广度优先搜索（八方向，不切墙角），再把能直着走的段落拉直。
-   * 终点不可走时改去离它最近的可走格。返回途经的脚底坐标（不含起点），走不到返回空数组。
+   * 碰撞盒比一格宽，所以只走「站得下」的格子：脚底放在格子下沿正中时碰撞盒不碰障碍。
+   * 终点不可走时改去离它最近的站得下的格。返回途经的脚底坐标（不含起点），走不到返回空数组。
    */
   path(x0: number, y0: number, x1: number, y1: number): { x: number; y: number }[] {
-    const tile = (x: number, y: number) => [Math.floor(x / TILE), Math.floor((y - 1) / TILE)];
+    const tile = (x: number, y: number) => [Math.floor(x / CELL), Math.floor((y - 1) / CELL)];
+    const foot = (c: number, r: number) => ({ x: c * CELL + CELL / 2, y: (r + 1) * CELL - 1 });
     const [sx, sy] = tile(x0, y0);
     let [gx, gy] = tile(x1, y1);
-    if (this.tileBlocked(gx, gy)) {
+    if (!this.canStand(gx, gy)) {
       const near = this.nearestFree(gx, gy);
       if (!near) return [];
       [gx, gy] = near;
-      x1 = gx * TILE + TILE / 2;
-      y1 = (gy + 1) * TILE - 4;
+      ({ x: x1, y: y1 } = foot(gx, gy));
     }
     const start = sy * this.w + sx, goal = gy * this.w + gx;
     if (start === goal) return this.footBlocked(x1, y1) ? [] : [{ x: x1, y: y1 }];
@@ -104,18 +118,18 @@ export class Walkable {
       const i = queue[head], cx = i % this.w, cy = (i - cx) / this.w;
       for (const [dx, dy] of NEIGHBORS) {
         const nx = cx + dx, ny = cy + dy, j = ny * this.w + nx;
-        if (this.tileBlocked(nx, ny) || from[j] >= 0) continue;
-        if (dx && dy && (this.tileBlocked(cx + dx, cy) || this.tileBlocked(cx, cy + dy))) continue;
+        if (!this.canStand(nx, ny) || from[j] >= 0) continue;
+        if (dx && dy && (!this.canStand(cx + dx, cy) || !this.canStand(cx, cy + dy))) continue;
         from[j] = i;
         queue.push(j);
       }
     }
     if (from[goal] < 0) return [];
     const tiles: { x: number; y: number }[] = [];
-    for (let i = goal; i !== start; i = from[i]) tiles.push({ x: (i % this.w) * TILE + TILE / 2, y: (Math.floor(i / this.w) + 1) * TILE - 4 });
+    for (let i = goal; i !== start; i = from[i]) tiles.push(foot(i % this.w, Math.floor(i / this.w)));
     tiles.reverse();
     tiles[tiles.length - 1] = { x: x1, y: y1 };
-    if (this.footBlocked(x1, y1)) tiles[tiles.length - 1] = { x: gx * TILE + TILE / 2, y: (gy + 1) * TILE - 4 };
+    if (this.footBlocked(x1, y1)) tiles[tiles.length - 1] = foot(gx, gy);
     // 拉直：从当前点尽量往后找一个能直线走到的点
     const out: { x: number; y: number }[] = [];
     let cur = { x: x0, y: y0 };
@@ -127,6 +141,18 @@ export class Walkable {
       k = far + 1;
     }
     return out;
+  }
+
+  /** 每格站不站得下（寻路时才算，服务端用不到） */
+  private stand?: Uint8Array;
+  private canStand(c: number, r: number): boolean {
+    if (c < 0 || r < 0 || c >= this.w || r >= this.h) return false;
+    if (!this.stand) {
+      this.stand = new Uint8Array(this.w * this.h);
+      for (let rr = 0; rr < this.h; rr++)
+        for (let cc = 0; cc < this.w; cc++) this.stand[rr * this.w + cc] = this.footBlocked(cc * CELL + CELL / 2, (rr + 1) * CELL - 1) ? 0 : 1;
+    }
+    return this.stand[r * this.w + c] === 1;
   }
 
   /**
@@ -146,10 +172,10 @@ export class Walkable {
   }
 
   private nearestFree(tx: number, ty: number): [number, number] | null {
-    for (let r = 1; r <= 6; r++)
+    for (let r = 1; r <= 12; r++)
       for (let dy = -r; dy <= r; dy++)
         for (let dx = -r; dx <= r; dx++)
-          if (Math.max(Math.abs(dx), Math.abs(dy)) === r && !this.tileBlocked(tx + dx, ty + dy)) return [tx + dx, ty + dy];
+          if (Math.max(Math.abs(dx), Math.abs(dy)) === r && this.canStand(tx + dx, ty + dy)) return [tx + dx, ty + dy];
     return null;
   }
 }

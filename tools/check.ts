@@ -4,7 +4,8 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { EXTENT, SAT_PPM, SAT_SOURCES, toWorld, type P } from './geo.ts';
 import { decodePNG, encodePNG } from './pix.ts';
-import { loadSurvey, type Survey } from './survey.ts';
+import { outlines } from './shape.ts';
+import { loadSurvey, type Shape, type Survey } from './survey.ts';
 
 const argv = process.argv.slice(2);
 const source = isNaN(Number(argv[0])) ? argv.shift()! : SAT_SOURCES[0];
@@ -41,6 +42,7 @@ function line(a: P, b: P, c: RGB, alpha = 1): void {
   for (let i = 0; i <= n; i++) dot(ax + ((bx - ax) * i) / n, ay + ((by - ay) * i) / n, c, alpha);
 }
 const ring = (poly: P[], c: RGB) => poly.forEach((p, i) => line(p, poly[(i + 1) % poly.length], c));
+const shape = (s: Shape, c: RGB) => outlines(s).forEach((o) => (o.closed ? ring(o.pts, c) : o.pts.slice(1).forEach((p, i) => line(o.pts[i], p, c))));
 
 // 3×5 数字字形，放大 2 倍
 const DIGITS = ['111101101101111', '010110010010111', '111001111100111', '111001111001111', '101101111001001', '111100111001111', '111100111101111', '111001001001001', '111101111101111', '111101111001111'];
@@ -73,11 +75,26 @@ for (const e of osm.elements) {
   // lean：楼基是轮廓和它朝 lean 反方向挪过的那份的重叠部分，两圈都画出来
   if (lean) ring(base.map(([x, y]): P => [x - lean[0], y - lean[1]]), [255, 0, 255]);
 }
-for (const b of survey.newBuildings) ring(b.poly, [255, 0, 255]);
+for (const b of survey.newBuildings) shape(b, [255, 0, 255]);
 
 // 描图：面按类别上色，树画冠幅圆
 const COLORS: Record<string, RGB> = { asphalt: [80, 160, 255], paving: [255, 160, 0], parking: [0, 220, 255], grass: [120, 255, 80], wood: [0, 255, 120], hedge: [255, 0, 160], planter: [200, 255, 0], water: [0, 120, 255], track: [255, 60, 60], pitch: [200, 255, 120], court: [0, 255, 200] };
-for (const a of survey.areas) ring(a.poly, COLORS[a.kind] ?? [255, 255, 255]);
+for (const a of survey.areas) shape(a, COLORS[a.kind] ?? [255, 255, 255]);
+// 标准运动场：跑道外沿、球场边线
+for (const f of survey.fields) {
+  const a = ((f.angle ?? 0) * Math.PI) / 180;
+  const at = (u: number, v: number): P => [f.at[0] + u * Math.cos(a) - v * Math.sin(a), f.at[1] + u * Math.sin(a) + v * Math.cos(a)];
+  if (f.type === 'track') {
+    const R = 36.5 + (f.lanes ?? 8) * 1.22, S = 84.39 / 2;
+    const pts: P[] = [];
+    for (let k = 0; k <= 32; k++) pts.push(at(R * Math.cos((Math.PI * k) / 32), S + R * Math.sin((Math.PI * k) / 32)));
+    for (let k = 0; k <= 32; k++) pts.push(at(-R * Math.cos((Math.PI * k) / 32), -S - R * Math.sin((Math.PI * k) / 32)));
+    ring(pts, COLORS.track);
+  } else {
+    const [L, Wd] = f.type === 'football' ? [f.length ?? 105, f.width ?? 68] : { basketball: [28, 15], tennis: [23.77, 10.97], volleyball: [18, 9] }[f.type];
+    ring([at(-Wd / 2, -L / 2), at(Wd / 2, -L / 2), at(Wd / 2, L / 2), at(-Wd / 2, L / 2)], [255, 255, 255]);
+  }
+}
 for (const [tx, ty, r] of survey.trees) {
   const [cx, cy] = toPx([tx, ty]);
   for (let i = 0; i < 64; i++) dot(cx + Math.cos((i / 64) * Math.PI * 2) * r * ppm, cy + Math.sin((i / 64) * Math.PI * 2) * r * ppm, [0, 255, 120]);

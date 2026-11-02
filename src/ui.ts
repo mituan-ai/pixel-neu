@@ -28,6 +28,15 @@ const SOURCE_LABEL: Record<string, string> = {
   S18: '东大校园号',
   S19: '东大新闻网',
   S20: '东大审计处',
+  S21: '东大数字思政平台',
+  S22: '东大校园号',
+  S23: '东大数字思政平台',
+  S24: '东大公安处供稿',
+  S25: '东大数字思政平台',
+  S26: 'FIBA 器材规则',
+  S27: '中国运载火箭技术研究院',
+  S28: '学校一舍修缮报道',
+  S29: '学校二舍修缮报道',
 };
 const hex = (n: number) => '#' + n.toString(16).padStart(6, '0');
 
@@ -400,37 +409,9 @@ function markHelpSeen(): void {
 /** 小地图显示范围（格）：120 格 = 240 m */
 const MINIMAP_SPAN = 120;
 
-/** 小地图底图：从 tiles.png 每格取中心像素的颜色，按地图 ground 图层铺开，再叠上建筑占地 */
-
+/** 小地图底图：地图工具生成的 minimap.png（每 2 m 一像素，楼基是灰色） */
 function buildMinimapBase(canvas: HTMLCanvasElement): void {
-  void Promise.all([fetch('map.json').then((r) => r.json()), new Promise<HTMLImageElement>((res) => {
-    const img = new Image();
-    img.onload = () => res(img);
-    img.src = 'tiles.png';
-  })]).then(([map, img]) => {
-    const t = document.createElement('canvas');
-    t.width = img.width;
-    t.height = img.height;
-    const tc = t.getContext('2d')!;
-    tc.drawImage(img, 0, 0);
-    const cols = img.width / TILE;
-    const ctx = canvas.getContext('2d')!;
-    const out = ctx.createImageData(canvas.width, canvas.height);
-    const ground = map.layers.find((l: { name: string }) => l.name === 'ground').data as number[];
-    const cache = new Map<number, Uint8ClampedArray>();
-    ground.forEach((g, i) => {
-      if (!cache.has(g)) {
-        const k = g - 1;
-        cache.set(g, tc.getImageData((k % cols) * TILE + 8, Math.floor(k / cols) * TILE + 8, 1, 1).data);
-      }
-      out.data.set(cache.get(g)!, i * 4);
-    });
-    ctx.putImageData(out, 0, 0);
-    ctx.fillStyle = '#93989a';
-    for (const o of map.layers.find((l: { name: string }) => l.name === 'objects').objects)
-      if (o.type === 'building') {
-        const rows = (o.properties.find((p: { name: string }) => p.name === 'mask').value as string).split('/');
-        rows.forEach((row, r) => [...row].forEach((ch, c) => ch !== '0' && ctx.fillRect(o.x / TILE + c, o.y / TILE + r, 1, 1)));
-      }
-  });
+  const img = new Image();
+  img.onload = () => canvas.getContext('2d')!.drawImage(img, 0, 0);
+  img.src = 'minimap.png';
 }

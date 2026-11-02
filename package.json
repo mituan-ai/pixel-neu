@@ -25,7 +25,8 @@
     "map": "node tools/map.ts",
     "art": "node tools/art.ts",
     "sat": "node tools/sat.ts",
-    "check": "node tools/check.ts"
+    "check": "node tools/check.ts",
+    "parallax": "node tools/parallax.ts"
   },
   "dependencies": {
     "@colyseus/core": "^0.18.10",
