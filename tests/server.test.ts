@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Auth, ApiError, clientIp } from '../server/auth.ts';
+import { Auth, ApiError, RateLimit, clientIp } from '../server/auth.ts';
 import { ChatHub, type Peer } from '../server/chat.ts';
 import { Db } from '../server/db.ts';
 import { parseOpenMeteo } from '../server/weather.ts';
@@ -80,6 +80,16 @@ describe('登录', () => {
     expect(clientIp({ 'x-real-ip': '9.9.9.9' })).toBe('9.9.9.9');
     expect(clientIp({ 'x-forwarded-for': '1.2.3.4, 10.0.0.1' })).toBe('1.2.3.4');
     expect(clientIp({}, '127.0.0.1')).toBe('127.0.0.1');
+  });
+});
+
+describe('接口限频', () => {
+  it('每个 IP 每分钟超过上限就拒绝，过了一分钟恢复', () => {
+    const r = new RateLimit(3);
+    for (let i = 0; i < 3; i++) expect(r.take('1.1.1.1', 1000)).toBe(true);
+    expect(r.take('1.1.1.1', 1000)).toBe(false);
+    expect(r.take('2.2.2.2', 1000)).toBe(true);
+    expect(r.take('1.1.1.1', 61_000)).toBe(true);
   });
 });
 

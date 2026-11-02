@@ -3,7 +3,7 @@
 // 登录的人进 players（别人看得见）；访客只收状态，不进 players，不能发言，也不占 ROOM_MAX。
 import { readFileSync } from 'node:fs';
 import { Room, ServerError, type AuthContext, type Client } from '@colyseus/core';
-import { CHAT, CHAT_COOLDOWN, EMOTES, EVENT, GUEST_MAX, MSG, PHRASES, ROOM_MAX } from '../shared/social.ts';
+import { CHAT, CHAT_COOLDOWN, EMOTES, EVENT, GUEST_MAX, MSG, PHRASES, ROOM_FULL, ROOM_MAX } from '../shared/social.ts';
 import { CampusState, Player } from '../shared/state.ts';
 import { DEV_BOOST, LAYER, RIDE_FACTOR, RIDE_REACH, WALK_SPEED, Walkable, isRideable, prop, type TiledMap } from '../shared/world.ts';
 import { chatHub, type Peer } from './chat.ts';
@@ -57,6 +57,8 @@ export class CampusRoom extends Room<{ state: CampusState }> {
   maxMessagesPerSecond = 30;
   state = new CampusState();
   private seen = new Map<string, Seen>();
+  /** 通过了鉴权、还没进房的人：同时涌进来很多人时，名额要把他们算上 */
+  private pending: { guest: boolean; t: number }[] = [];
   private unsubscribe?: () => void;
 
   messages = {
@@ -159,8 +161,20 @@ export class CampusRoom extends Room<{ state: CampusState }> {
 
   onAuth(_client: Client, options: JoinOptions = {}, _context: AuthContext): { user?: User } {
     const user = db.userByToken(options.token);
-    if (!user && this.clients.length - this.state.players.size >= GUEST_MAX) throw new ServerError(4001, '旁观人数已满');
+    const now = Date.now();
+    this.pending = this.pending.filter((p) => now - p.t < 10_000);
+    const { players, guests } = this.counts();
+    // 满了就拒绝，客户端稍等重试时房间已经锁上，会被分进新的平行房间
+    if (user ? players >= ROOM_MAX : guests >= GUEST_MAX) throw new ServerError(ROOM_FULL, user ? '这个平行校园满了' : '旁观人数已满');
+    this.pending.push({ guest: !user, t: now });
+    this.relock();
     return { user };
+  }
+
+  /** 人数：已经进房的加上正在进门的 */
+  private counts(): { players: number; guests: number } {
+    const pg = this.pending.filter((p) => p.guest).length;
+    return { players: this.state.players.size + this.pending.length - pg, guests: this.clients.length - this.state.players.size + pg };
   }
 
   onJoin(client: Client, _options: JoinOptions = {}, auth: { user?: User } = {}) {
@@ -176,6 +190,8 @@ export class CampusRoom extends Room<{ state: CampusState }> {
         break;
       }
     }
+    const k = this.pending.findIndex((p) => p.guest === !user);
+    if (k >= 0) this.pending.splice(k, 1);
     const visible = !!user && this.state.players.size < ROOM_MAX;
     if (visible) this.state.players.set(client.sessionId, new Player({ name: user.name, ...user.look, x, y, dir: 3, moving: false, uid: user.id, ride: 0 }));
     this.seen.set(client.sessionId, { x, y, t: Date.now(), chat: 0, user, visible, dismount: 0 });
@@ -198,8 +214,8 @@ export class CampusRoom extends Room<{ state: CampusState }> {
 
   /** 登录的人满 40 或访客满 60 就锁房间，让新来的人进新的平行房间 */
   private relock(): void {
-    const guests = this.clients.length - this.state.players.size;
-    const full = this.state.players.size >= ROOM_MAX || guests >= GUEST_MAX || this.clients.length >= this.maxClients;
+    const { players, guests } = this.counts();
+    const full = players >= ROOM_MAX || guests >= GUEST_MAX || this.clients.length + this.pending.length >= this.maxClients;
     if (full && !this.locked) void this.lock();
     else if (!full && this.locked) void this.unlock();
   }

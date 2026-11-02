@@ -52,6 +52,7 @@ npm run parallax   两期卫星图视差测楼高和楼基，输出建议值和 
 npm run map        生成 assets/map.json、地面分块 assets/ground/ 和小地图 assets/minimap.png
 npm run art        生成美术，并输出 data/preview.png
 node tools/admin.ts  管理：举报、禁言、封号、删消息（用法见文件开头）
+node tools/loadtest.ts  压测：默认 40 个登录机器人加 200 个访客（只对开发库跑，用法见文件开头）
 ```
 
 改了地图或美术生成器：`npm run map && npm run art && npm test`，看 `data/preview.png`，再重启服务端（它启动时读 map.json）。

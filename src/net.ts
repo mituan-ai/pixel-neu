@@ -1,6 +1,6 @@
 // 联机：连上 Colyseus 房间，把状态变化和瞬时事件转成回调。场景和界面只和这里打交道，不直接碰 SDK。
 import { Callbacks, Client, type Room } from '@colyseus/sdk';
-import { EVENT, MSG, ROOM_NAME, type Channel, type ChatLine } from '../shared/social.ts';
+import { EVENT, JOIN_TRIES, MSG, ROOM_FULL, ROOM_NAME, type Channel, type ChatLine } from '../shared/social.ts';
 import type { CampusState, Player } from '../shared/state.ts';
 import type { Weather } from '../shared/weather.ts';
 
@@ -65,7 +65,7 @@ export class Net {
   /** token 为空就以访客身份进 */
   static async join(token: string | null, h: NetHandlers): Promise<Net> {
     const client = new Client(Net.endpoint());
-    const room = await client.joinOrCreate<CampusState>(ROOM_NAME, token ? { token } : {});
+    const room = await joinRoom(client, token ? { token } : {});
     return new Net(room, h);
   }
 
@@ -131,5 +131,17 @@ export class Net {
   leave(): void {
     this.closing = true;
     void this.room.leave();
+  }
+}
+
+/** 进房：房间刚满（很多人同时涌进来）就隔一小会儿重试，这时满的房间已经锁上，会进新的平行房间 */
+export async function joinRoom(client: Client, options: { token?: string }): Promise<Room<unknown, CampusState>> {
+  for (let k = 1; ; k++) {
+    try {
+      return await client.joinOrCreate<CampusState>(ROOM_NAME, options);
+    } catch (e) {
+      if ((e as { code?: number }).code !== ROOM_FULL || k >= JOIN_TRIES) throw e;
+      await new Promise((r) => setTimeout(r, 200 + Math.random() * 600 * k));
+    }
   }
 }

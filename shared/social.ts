@@ -134,6 +134,10 @@ export const CHAT_COOLDOWN = 800;
 
 /** 单房间旁观（访客）上限：访客只收状态，不进 players，不占 ROOM_MAX */
 export const GUEST_MAX = 60;
+/** 进房被拒的错误码：房间刚满。客户端稍等重试，会被分进新的平行房间 */
+export const ROOM_FULL = 4001;
+/** 进房的重试：最多几次 */
+export const JOIN_TRIES = 5;
 
 /** 文字聊天 */
 export const CHAT = {

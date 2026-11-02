@@ -119,13 +119,38 @@ function bearer(req: IncomingMessage): string {
   return typeof a === 'string' && a.startsWith('Bearer ') ? a.slice(7) : '';
 }
 
+/** 每个 IP 每分钟最多调几次接口（短信另有更严的限额） */
+export const API_PER_MIN = 30;
+
+/** 按 IP 的分钟计数：超了返回 false */
+export class RateLimit {
+  private hits = new Map<string, { n: number; reset: number }>();
+  private readonly limit: number;
+  private readonly window: number;
+  constructor(limit: number, window = MIN) {
+    this.limit = limit;
+    this.window = window;
+  }
+  take(key: string, now = Date.now()): boolean {
+    const h = this.hits.get(key);
+    if (!h || now >= h.reset) {
+      if (this.hits.size > 10_000) for (const [k, v] of this.hits) if (now >= v.reset) this.hits.delete(k);
+      this.hits.set(key, { n: 1, reset: now + this.window });
+      return true;
+    }
+    return ++h.n <= this.limit;
+  }
+}
+
 /** 把接口挂到 express app 上 */
 export function mountAuth(app: { post(path: string, h: (req: Req, res: ServerResponse) => void): void }, auth: Auth): void {
+  const limit = new RateLimit(API_PER_MIN);
   const route = (path: string, needUser: boolean, h: Handler) =>
     app.post(path, async (req, res) => {
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.setHeader('Cache-Control', 'no-store');
       try {
+        if (!limit.take(clientIp(req.headers, req.socket.remoteAddress))) throw new ApiError(429, '操作太频繁，请稍后再试');
         const body = await readBody(req);
         const token = bearer(req);
         const user = token ? auth.db.userByToken(token) : undefined;
