@@ -117,6 +117,7 @@ export const PHRASES = [
 export const MSG = {
   move: 'move', emote: 'emote', say: 'say',
   chat: 'chat', history: 'history', report: 'report', block: 'block', unblock: 'unblock', profile: 'profile',
+  ride: 'ride',
 } as const;
 
 /** 服务端广播给其他人的瞬时事件 */

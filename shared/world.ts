@@ -12,6 +12,12 @@ export const GROUND_CHUNK = 512;
 export const WALK_SPEED = 80;
 /** 开发者模式按住 Shift 的加速倍数：客户端只在 Vite 开发时启用，服务端只在带 --dev 启动时放行 */
 export const DEV_BOOST = 5;
+/** 骑车的速度是步行的几倍；离单车多近才能骑上（像素，3 m） */
+export const RIDE_FACTOR = 2.5;
+export const RIDE_REACH = 24;
+
+/** 地图里能骑的车：物件名「v:车型:车色号」里车型是自行车或共享单车的 */
+export const isRideable = (sprite: string) => /^v:(bike-|share-)/.test(sprite);
 
 /** 角色脚下的碰撞盒（像素，以脚底中心为原点） */
 export const FOOT = { w: 10, h: 6 };

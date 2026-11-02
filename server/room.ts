@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { Room, ServerError, type AuthContext, type Client } from '@colyseus/core';
 import { CHAT, CHAT_COOLDOWN, EMOTES, EVENT, GUEST_MAX, MSG, PHRASES, ROOM_MAX } from '../shared/social.ts';
 import { CampusState, Player } from '../shared/state.ts';
-import { DEV_BOOST, LAYER, WALK_SPEED, Walkable, prop, type TiledMap } from '../shared/world.ts';
+import { DEV_BOOST, LAYER, RIDE_FACTOR, RIDE_REACH, WALK_SPEED, Walkable, isRideable, prop, type TiledMap } from '../shared/world.ts';
 import { chatHub, type Peer } from './chat.ts';
 import { openDb, type User } from './db.ts';
 import { weather } from './weather.ts';
@@ -18,6 +18,14 @@ const spawn = (() => {
   const o = layer?.type === 'objectgroup' ? layer.objects.find((o) => o.type === 'spawn') : undefined;
   if (!o) throw new Error('地图里没有出生点');
   return { x: o.x, y: o.y, r: prop(o, 'radius', 32) };
+})();
+
+/** 能骑的单车：地图物件编号 → 位置 */
+const bikes = (() => {
+  const layer = map.layers.find((l) => l.name === LAYER.objects);
+  const out = new Map<number, { x: number; y: number }>();
+  if (layer?.type === 'objectgroup') for (const o of layer.objects) if (o.type === 'prop' && isRideable(prop(o, 'sprite', ''))) out.set(o.id, { x: o.x, y: o.y });
+  return out;
 })();
 
 /** 允许的速度余量：网络抖动时两次上报间隔不均匀 */
@@ -36,6 +44,8 @@ interface Seen {
   user?: User;
   /** 在 players 里（别人看得见） */
   visible: boolean;
+  /** 最近一次下车的时刻：下车后一秒内仍按骑车速度校验 */
+  dismount: number;
 }
 
 interface JoinOptions {
@@ -63,7 +73,8 @@ export class CampusRoom extends Room<{ state: CampusState }> {
         return;
       }
       const now = Date.now();
-      const maxStep = (MAX_SPEED * SPEED_SLACK * Math.max(50, now - s.t)) / 1000 + 4;
+      const fast = p.ride || now - s.dismount < 1000 ? RIDE_FACTOR : 1;
+      const maxStep = (MAX_SPEED * fast * SPEED_SLACK * Math.max(50, now - s.t)) / 1000 + 4;
       if (Math.hypot(x - s.x, y - s.y) > maxStep || walk.footBlocked(x, y) || !walk.reachable(s, { x, y })) {
         client.send(EVENT.snap, { x: s.x, y: s.y });
         return;
@@ -73,6 +84,21 @@ export class CampusRoom extends Room<{ state: CampusState }> {
       s.t = now;
       p.dir = Number.isInteger(m.dir) && (m.dir as number) >= 0 && (m.dir as number) < 4 ? (m.dir as number) : p.dir;
       p.moving = m.moving === true;
+    },
+    // 骑车：走到单车 3 m 内才能骑上，一辆车同时只能一个人骑；0 是下车，单车回到原位
+    [MSG.ride]: (client: Client, id: unknown) => {
+      const p = this.state.players.get(client.sessionId);
+      const s = this.seen.get(client.sessionId);
+      if (!p || !s || !Number.isInteger(id)) return;
+      if (id === 0) {
+        if (p.ride) s.dismount = Date.now();
+        p.ride = 0;
+        return;
+      }
+      const b = bikes.get(id as number);
+      if (!b || Math.hypot(b.x - p.x, b.y - p.y) > RIDE_REACH) return;
+      for (const q of this.state.players.values()) if (q.ride === id) return;
+      p.ride = id as number;
     },
     [MSG.emote]: (client: Client, id: unknown) => {
       if (this.chatAllowed(client) && Number.isInteger(id) && (id as number) >= 0 && (id as number) < EMOTES.length)
@@ -151,8 +177,8 @@ export class CampusRoom extends Room<{ state: CampusState }> {
       }
     }
     const visible = !!user && this.state.players.size < ROOM_MAX;
-    if (visible) this.state.players.set(client.sessionId, new Player({ name: user.name, ...user.look, x, y, dir: 3, moving: false, uid: user.id }));
-    this.seen.set(client.sessionId, { x, y, t: Date.now(), chat: 0, user, visible });
+    if (visible) this.state.players.set(client.sessionId, new Player({ name: user.name, ...user.look, x, y, dir: 3, moving: false, uid: user.id, ride: 0 }));
+    this.seen.set(client.sessionId, { x, y, t: Date.now(), chat: 0, user, visible, dismount: 0 });
     hub.peers.set(client.sessionId, {
       sid: client.sessionId,
       uid: user?.id ?? 0,

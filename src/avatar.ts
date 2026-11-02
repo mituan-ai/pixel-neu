@@ -2,10 +2,13 @@
 // 自己的角色多一层半透明“幽灵”画在最上面：被楼或树挡住时仍能看到轮廓；没被挡时与本体重合，看不出来。
 import Phaser from 'phaser';
 import { AVATAR, AVATAR_PARTS, avatarFrame, tintOf, type Look } from '../shared/social.ts';
+import { vehicleKey } from '../shared/vehicles.ts';
 
 /** 三帧走路：左脚、站立、右脚、站立 */
 const WALK_CYCLE = [0, 1, 2, 1];
 const WALK_FPS = 7;
+/** 骑车时人抬高几个像素，坐在车座上 */
+const RIDE_LIFT = 3;
 /** 幽灵层的深度：高于一切世界物体 */
 export const GHOST_DEPTH = 1e6;
 
@@ -28,6 +31,8 @@ export class Avatar {
   private readonly body: Phaser.GameObjects.Container;
   private readonly ghost?: Phaser.GameObjects.Container;
   private animT = 0;
+  /** 骑着的单车：「车型:车色号」 */
+  private ride: string | null = null;
 
   constructor(scene: Phaser.Scene, layer: Phaser.GameObjects.Layer, look: Look, x: number, y: number, self = false) {
     this.look = look;
@@ -79,7 +84,22 @@ export class Avatar {
   setShade(c: number): void {
     if (c === this.shade) return;
     this.shade = c;
+    for (const k of this.containers()) (k.getByName('bike') as Phaser.GameObjects.Image | null)?.setTint(c);
     this.setLook(this.look);
+  }
+
+  /** 骑上单车（物件名「v:车型:车色号」）或下车（null）：单车画在人前面，人抬高一点 */
+  setRide(sprite: string | null): void {
+    const ride = sprite ? sprite.slice(2) : null;
+    if (ride === this.ride) return;
+    this.ride = ride;
+    for (const c of this.containers()) {
+      const old = c.getByName('bike');
+      if (old) old.destroy();
+      if (ride) c.add(c.scene.add.image(0, 0, 'vehicles', '__BASE').setName('bike').setTint(this.shade));
+      AVATAR_PARTS.forEach((_, i) => (c.list[i + 1] as Phaser.GameObjects.Sprite).setY(ride ? -RIDE_LIFT : 0));
+    }
+    this.applyFrame();
   }
 
   /** 访客自己半透明 */
@@ -96,9 +116,17 @@ export class Avatar {
   }
 
   private applyFrame(): void {
-    const col = this.moving ? WALK_CYCLE[Math.floor(this.animT * WALK_FPS) % WALK_CYCLE.length] : AVATAR.idle;
-    for (const c of this.containers())
-      AVATAR_PARTS.forEach((p, i) => (c.list[i + 1] as Phaser.GameObjects.Sprite).setFrame(avatarFrame(p.block(this.look), display.dir(this.dir), col)));
+    // 骑车时不迈腿
+    const col = this.moving && !this.ride ? WALK_CYCLE[Math.floor(this.animT * WALK_FPS) % WALK_CYCLE.length] : AVATAR.idle;
+    const dir = display.dir(this.dir);
+    for (const c of this.containers()) {
+      AVATAR_PARTS.forEach((p, i) => (c.list[i + 1] as Phaser.GameObjects.Sprite).setFrame(avatarFrame(p.block(this.look), dir, col)));
+      const bike = c.getByName('bike') as Phaser.GameObjects.Image | null;
+      if (bike && this.ride) {
+        const [id, paint] = this.ride.split(':');
+        bike.setFrame(vehicleKey(id, Number(paint), dir, 0));
+      }
+    }
   }
 }
 

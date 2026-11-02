@@ -20,6 +20,8 @@ export const Player = schema(
     moving: t.boolean(),
     /** 账号编号：拉黑、举报用 */
     uid: t.uint32(),
+    /** 正在骑的单车（地图物件编号），0 是步行 */
+    ride: t.uint32(),
   },
   'Player',
 );

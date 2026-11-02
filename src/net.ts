@@ -101,6 +101,11 @@ export class Net {
     this.room.send(MSG.say, i);
   }
 
+  /** 骑上地图里编号为 id 的单车；0 是下车 */
+  ride(id: number): void {
+    this.room.send(MSG.ride, id);
+  }
+
   chat(ch: Channel, text: string): void {
     this.room.send(MSG.chat, { ch, text });
   }

@@ -66,6 +66,8 @@ export interface HudActions {
   walkTo(x: number, y: number): boolean;
   /** 摇杆：屏幕方向的向量，长度 0–1 */
   stick(x: number, y: number): void;
+  /** 骑上身边的单车或下车 */
+  ride(): void;
   login(): void;
 }
 
@@ -86,6 +88,7 @@ export class Hud {
   private readonly north = el('div', 'north', '北');
   private readonly banner = el('div', 'guest-banner box');
   private readonly card = el('div', 'card box hidden');
+  private readonly rideBtn: HTMLButtonElement;
   private readonly chatBtn: HTMLButtonElement;
   private readonly pop = el('div', 'pop box hidden');
   private readonly atlas: Atlas;
@@ -160,14 +163,18 @@ export class Hud {
     PHRASES.forEach((p, i) => phrases.append(button(p, 'small', () => this.act(() => actions.say(i)))));
     this.pop.append(emotes, phrases);
 
+    // 骑车：走到单车旁边才出现
+    this.rideBtn = button('骑车', 'primary ride-btn hidden', () => actions.ride());
+    this.rideBtn.title = '骑车 / 下车（R）';
+
     // 访客横幅
     this.banner.append(el('span', '', '访客模式 · 别人看不到你'), button('登录', 'primary small', () => actions.login(), 'login'));
 
     const credit = el('div', 'attribution', '© OpenStreetMap 贡献者 · 天气 Open-Meteo\n谜团 mituan · 非官方作品');
     credit.style.whiteSpace = 'pre-line';
-    this.el.append(top, dock, this.card, this.banner, bar, this.pop, credit, this.atlas.el);
+    this.el.append(top, dock, this.card, this.banner, bar, this.rideBtn, this.pop, credit, this.atlas.el);
     if (matchMedia('(pointer: coarse)').matches) this.el.append(this.joystick());
-    for (const e of [top, dock, bar, this.pop, this.card, this.banner]) e.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+    for (const e of [top, dock, bar, this.pop, this.card, this.banner, this.rideBtn]) e.addEventListener('pointerdown', (ev) => ev.stopPropagation());
     this.bindKeys();
     this.refreshAccount();
   }
@@ -175,6 +182,11 @@ export class Hud {
   /** 登录状态变了：横幅、聊天输入区 */
   refreshAccount(): void {
     this.banner.classList.toggle('hidden', !!account.me);
+  }
+
+  setRide(state: 'near' | 'riding' | null): void {
+    this.rideBtn.classList.toggle('hidden', !state);
+    this.rideBtn.textContent = state === 'riding' ? '下车' : '骑车';
   }
 
   setCount(n: number): void {
@@ -308,6 +320,7 @@ export class Hud {
       }
       if (e.key === 't' || e.key === 'T') this.togglePop();
       if (e.key === 'm' || e.key === 'M') this.atlas.toggle();
+      if ((e.key === 'r' || e.key === 'R') && !this.rideBtn.classList.contains('hidden')) this.actions.ride();
       if (e.key === '-' || e.key === '_') this.actions.zoom(-1);
       if (e.key === '=' || e.key === '+') this.actions.zoom(1);
     });

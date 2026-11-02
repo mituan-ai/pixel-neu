@@ -45,6 +45,7 @@ async function boot(): Promise<void> {
   const scene = new CampusScene(map, {
     poi: (p) => hud?.setPoi(p),
     count: (n) => hud?.setCount(n),
+    ride: (s) => hud?.setRide(s),
   });
   scene.guestLook = account.guestLook();
   // 开发时在控制台用 pixelNeu.scene 调试（线上构建里不存在）
@@ -151,6 +152,12 @@ async function boot(): Promise<void> {
       zoom: (step) => scene.zoomBy(step),
       walkTo: (x, y) => scene.walkTo(x, y),
       stick: (x, y) => scene.setStick(x, y),
+      ride: () => {
+        if (!scene.toggleRide()) {
+          toast('登录后可以骑车');
+          openLogin();
+        }
+      },
       login: openLogin,
     },
     { size: scene.mapSize, zoom: scene.zoom, landmarks: scene.landmarks, dots: () => scene.dots(), destination: () => scene.destination() },

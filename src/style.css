@@ -369,6 +369,15 @@ textarea {
   margin-left: auto;
 }
 
+/* 骑车按钮：右下，底栏上方 */
+.ride-btn {
+  position: absolute;
+  right: calc(var(--safe-r) + var(--gap));
+  bottom: calc(var(--safe-b) + 104px);
+  min-height: 44px;
+  padding: 0 16px;
+}
+
 /* 访客横幅 */
 .guest-banner {
   position: absolute;

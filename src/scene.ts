@@ -8,7 +8,7 @@ import { AVATAR, DIR, PHRASES, cleanLook, type Look } from '../shared/social.ts'
 import type { Player } from '../shared/state.ts';
 import { vehicleKey } from '../shared/vehicles.ts';
 import { VIEW_NAME, dirFromView, dirToView, fromView, toView, viewSize, type View } from '../shared/view.ts';
-import { DEV_BOOST, GROUND_CHUNK, LAYER, TILE, WALK_SPEED, Walkable, prop, type TiledMap, type TiledObject } from '../shared/world.ts';
+import { DEV_BOOST, GROUND_CHUNK, LAYER, RIDE_FACTOR, RIDE_REACH, TILE, WALK_SPEED, Walkable, isRideable, prop, type TiledMap, type TiledObject } from '../shared/world.ts';
 import { PAL } from '../tools/palette.ts';
 import type { Body } from '../shared/sky.ts';
 import { Avatar, GHOST_DEPTH, display, mulColor } from './avatar.ts';
@@ -31,6 +31,8 @@ export interface Poi {
 export interface SceneHooks {
   poi(p: Poi | null): void;
   count(n: number): void;
+  /** 骑车按钮：near 是走到了单车旁边，riding 是正在骑，null 不显示 */
+  ride(state: 'near' | 'riding' | null): void;
 }
 
 /** 一栋楼：贴图按视野加载，摆出来的是按列切开的几段 */
@@ -89,6 +91,8 @@ interface Actor {
   emote?: { img: Phaser.GameObjects.Image; until: number };
   say?: { text: Phaser.GameObjects.Text; until: number };
   look: Look;
+  /** 正在骑的单车（地图物件编号），0 是步行 */
+  ride: number;
 }
 
 export class CampusScene extends Phaser.Scene {
@@ -135,6 +139,10 @@ export class CampusScene extends Phaser.Scene {
   private lamps: Phaser.GameObjects.Image[] = [];
   private shadows!: Shadows;
   private ambient!: Ambient;
+  /** 能骑的单车：地图物件编号 → 位置和物件名；bikeImgs 是它们当前视角下的图 */
+  private bikes = new Map<number, { x: number; y: number; sprite: string }>();
+  private bikeImgs = new Map<number, Phaser.GameObjects.Image>();
+  private rideState: 'near' | 'riding' | null = null;
   /** 跟着镜头走的覆盖物（雨雪粒子） */
   private overlays: Phaser.GameObjects.GameObject[] = [];
   private readonly others = new Map<string, Actor>();
@@ -215,6 +223,7 @@ export class CampusScene extends Phaser.Scene {
     this.shadows = new Shadows(this, this.worldLayer);
     this.shadows.setTrees(this.trees());
     this.shadows.setView(this.view, (x, y) => this.toView(x, y));
+    for (const o of this.objects('prop')) if (isRideable(prop(o, 'sprite', ''))) this.bikes.set(o.id, { x: o.x, y: o.y, sprite: prop(o, 'sprite', '') });
     this.buildScenery();
     this.ambient = new Ambient(this, this.worldLayer, {
       walk: this.walk,
@@ -310,6 +319,7 @@ export class CampusScene extends Phaser.Scene {
       const look = cleanLook(p);
       if (JSON.stringify(look) !== JSON.stringify(a.look)) (a.look = look), a.av.setLook(look);
       if (p.name !== a.name) (a.name = p.name), a.label.setText(p.name);
+      if (p.ride !== a.ride) this.setRide(a, p.ride);
       if (a === this.me) return;
       a.tx = p.x;
       a.ty = p.y;
@@ -321,6 +331,7 @@ export class CampusScene extends Phaser.Scene {
       if (!a) return;
       this.destroyActor(a);
       this.others.delete(id);
+      this.refreshBikes();
       this.hooks.count(this.others.size + 1);
     },
     emote: (id, emote) => this.showEmote(id, emote),
@@ -354,7 +365,7 @@ export class CampusScene extends Phaser.Scene {
     const av = new Avatar(this, this.worldLayer, this.guestLook, h.x, h.y, true);
     av.setShade(this.shade);
     av.setAlpha(0.6);
-    this.me = { av, name: '访客', label: this.label('访客', true), tx: h.x, ty: h.y, look: this.guestLook, id: '', guest: true };
+    this.me = { av, name: '访客', label: this.label('访客', true), tx: h.x, ty: h.y, look: this.guestLook, id: '', guest: true, ride: 0 };
     this.me.label.setColor('#fff3d6');
     const at = this.toView(h.x, h.y);
     this.cam = { x: at.x, y: at.y - 12 };
@@ -463,6 +474,7 @@ export class CampusScene extends Phaser.Scene {
     this.placeDest();
     this.updateOverlays();
     this.checkPoi();
+    if ((this.game.loop.frame & 7) === 0) this.checkRide();
   }
 
   // ---------- 世界 ----------
@@ -480,6 +492,7 @@ export class CampusScene extends Phaser.Scene {
     this.buildProps();
     this.buildFences();
     this.buildLamps();
+    this.refreshBikes();
   }
 
   /** 记下一个静态物件；给了包围盒的，交给 cull() 决定什么时候放进显示列表 */
@@ -686,6 +699,7 @@ export class CampusScene extends Phaser.Scene {
 
   /** 物件：四个视角各一张的叫「名字@N」等；rot 是物件相对美术朝向转了几个 90°，换算出该用哪个视角的图 */
   private buildProps(): void {
+    this.bikeImgs.clear();
     const meta = this.cache.json.get('props-meta') as Record<string, { w: number; h: number; ax: number; ay: number }>;
     for (const o of this.objects('prop')) {
       const name = prop(o, 'sprite', '');
@@ -696,6 +710,7 @@ export class CampusScene extends Phaser.Scene {
         const dir = dirToView(this.view, [DIR.up, DIR.right, DIR.down, DIR.left][prop(o, 'rot', 0) % 4]);
         const img = this.add.image(p.x, p.y, 'vehicles', vehicleKey(id, Number(paint), dir, 0)).setDepth(p.y).setTint(this.shade);
         this.keep(img, img.getBounds());
+        if (this.bikes.has(o.id)) this.bikeImgs.set(o.id, img);
         continue;
       }
       const frame = meta[name] ? name : `${name}@${VIEW_NAME[(this.view - prop(o, 'rot', 0) + 8) % 4]}`;
@@ -877,14 +892,59 @@ export class CampusScene extends Phaser.Scene {
     const av = new Avatar(this, this.worldLayer, look, p.x, p.y, self);
     av.setShade(this.shade);
     av.dir = p.dir;
-    const actor: Actor = { av, name: p.name, label: this.label(p.name, self), tx: p.x, ty: p.y, look };
+    const actor: Actor = { av, name: p.name, label: this.label(p.name, self), tx: p.x, ty: p.y, look, ride: 0 };
     if (self) {
       if (this.me) this.destroyActor(this.me);
       this.me = { ...actor, id, guest: false };
       const at = this.toView(p.x, p.y);
       this.cam = { x: at.x, y: at.y - 12 };
     } else this.others.set(id, actor);
+    if (p.ride) this.setRide(self ? this.me! : actor, p.ride);
     this.hooks.count(this.others.size + 1);
+  }
+
+  // ---------- 骑车 ----------
+
+  private setRide(a: Actor, id: number): void {
+    a.ride = id;
+    a.av.setRide(id ? (this.bikes.get(id)?.sprite ?? null) : null);
+    this.refreshBikes();
+  }
+
+  /** 有人骑走的单车不画在原位，下车后回到原位 */
+  private refreshBikes(): void {
+    const ridden = new Set(this.actors().map((a) => a.ride));
+    for (const [id, img] of this.bikeImgs) img.setVisible(!ridden.has(id));
+  }
+
+  /** 自己身边 3 m 内没人骑的单车 */
+  private nearBike(): number {
+    if (!this.me) return 0;
+    const ridden = new Set(this.actors().map((a) => a.ride));
+    let best = 0, bd = RIDE_REACH;
+    for (const [id, b] of this.bikes) {
+      const d = Math.hypot(b.x - this.me.av.x, b.y - this.me.av.y);
+      if (d <= bd && !ridden.has(id)) (best = id), (bd = d);
+    }
+    return best;
+  }
+
+  /** 骑车按钮或 R 键：骑上身边的单车，或者下车。访客返回 false（要先登录） */
+  toggleRide(): boolean {
+    if (!this.me || this.me.guest) return false;
+    if (this.me.ride) this.net?.ride(0);
+    else {
+      const id = this.nearBike();
+      if (id) this.net?.ride(id);
+    }
+    return true;
+  }
+
+  private checkRide(): void {
+    const state = this.me?.ride ? 'riding' : this.nearBike() ? 'near' : null;
+    if (state === this.rideState) return;
+    this.rideState = state;
+    this.hooks.ride(state);
   }
 
   private destroyActor(a: Actor): void {
@@ -951,7 +1011,7 @@ export class CampusScene extends Phaser.Scene {
     }
     const len = Math.hypot(vx, vy);
     // 开发者模式：按住 Shift 加速（Vite 开发时才有）
-    const boost = import.meta.env.DEV && !typing && this.shift.isDown ? DEV_BOOST : 1;
+    const boost = (import.meta.env.DEV && !typing && this.shift.isDown ? DEV_BOOST : 1) * (me.ride ? RIDE_FACTOR : 1);
     let moved = false;
     if (len > 0) {
       // 沿路线走时最后一小步正好落在路点上，不来回抖
