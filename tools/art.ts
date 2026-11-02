@@ -659,10 +659,12 @@ const buildingArt = new Map<string, Pix>();
   const models = new Map(loadBuildings(osm, loadSurvey(), toWorld(gate.lat, gate.lon)[0]).map((b) => [`b${b.id}`, b]));
   for (const o of objLayer.objects.filter((o) => o.type === 'building')) {
     const sprite = prop(o, 'sprite', '');
+    const { drawBuildingLight } = await import('./art-building.ts');
     for (const v of VIEWS) {
       const pix = drawBuilding(models.get(sprite)!, v);
       if (v === 0) buildingArt.set(sprite, pix);
       save(pix, `buildings/${sprite}-${VIEW_NAME[v]}.png`);
+      save(drawBuildingLight(models.get(sprite)!, v), `buildings/${sprite}-${VIEW_NAME[v]}-light.png`);
     }
   }
 }
@@ -705,5 +707,53 @@ const buildingArt = new Map<string, Pix>();
   draws.sort((a, b) => a.y - b.y).forEach((d) => d.fn());
   mkdirSync(new URL('../data/', import.meta.url), { recursive: true });
   pv.save(new URL('../data/preview.png', import.meta.url));
+
+  // TASK-09：北门到信息学馆，世界米坐标 x 60–210、y −20–120。
+  const { EXTENT } = await import('./geo.ts');
+  const x0 = (60 - EXTENT.x0) * PPM, y0 = (-20 - EXTENT.y0) * PPM;
+  const night = new Pix(150 * PPM, 140 * PPM), windows = new Pix(night.w, night.h);
+  for (let y = 0; y < night.h; y++) {
+    const start = ((y0 + y) * pv.w + x0) * 4;
+    night.data.set(pv.data.subarray(start, start + night.w * 4), y * night.w * 4);
+  }
+  for (let i = 0; i < night.data.length; i += 4) {
+    night.data[i] *= 0.30;
+    night.data[i + 1] *= 0.34;
+    night.data[i + 2] *= 0.50;
+  }
+  const ordered = [...objLayer.objects].sort((a, b) => (a.type === 'building' ? a.y + a.height : a.y) - (b.type === 'building' ? b.y + b.height : b.y));
+  for (const o of ordered) {
+    const name = prop(o, 'sprite', '');
+    let art: PropArt, light: Pix | undefined;
+    if (o.type === 'building') {
+      art = { pix: buildingArt.get(name)!, ax: 0, ay: prop(o, 'top', 0) };
+    } else if (o.type === 'prop') {
+      art = PROPS[name] ?? PROPS[`${name}@${VIEW_NAME[(4 - prop(o, 'rot', 0)) % 4]}`];
+      if (!art) continue;
+    } else continue;
+    const ox = o.x - art.ax - x0, oy = o.y - art.ay - y0;
+    if (ox >= night.w || oy >= night.h || ox + art.pix.w <= 0 || oy + art.pix.h <= 0) continue;
+    if (o.type === 'building') light = loadPix(out(`buildings/${name}-N-light.png`));
+    for (let y = Math.max(0, Math.ceil(-oy)); y < Math.min(art.pix.h, night.h - oy); y++)
+      for (let x = Math.max(0, Math.ceil(-ox)); x < Math.min(art.pix.w, night.w - ox); x++) {
+        const i = (y * art.pix.w + x) * 4, tx = (ox + x) | 0, ty = (oy + y) | 0;
+        const j = (ty * windows.w + tx) * 4;
+        if (art.pix.data[i + 3] === 255) windows.data.fill(0, j, j + 4);
+        if (light && light.data[i + 3]) windows.data.set(light.data.subarray(i, i + 4), j);
+      }
+  }
+  night.blit(windows, 0, 0);
+  const glow = drawFx()['lamp-glow'];
+  for (const o of objLayer.objects.filter((o) => o.type === 'prop' && prop<string>(o, 'sprite', '') === 'lamp')) {
+    const ox = Math.round(o.x - x0 - glow.ax), oy = Math.round(o.y - y0 - glow.ay);
+    for (let y = 0; y < glow.pix.h; y++)
+      for (let x = 0; x < glow.pix.w; x++) {
+        const tx = ox + x, ty = oy + y, i = (y * glow.pix.w + x) * 4;
+        if (tx < 0 || ty < 0 || tx >= night.w || ty >= night.h || !glow.pix.data[i + 3]) continue;
+        const j = (ty * night.w + tx) * 4;
+        for (let k = 0; k < 3; k++) night.data[j + k] = Math.min(255, night.data[j + k] + glow.pix.data[i + k] * 0.35);
+      }
+  }
+  night.save(new URL('../data/preview-night.png', import.meta.url));
 }
 console.log(`美术已生成：${buildingArt.size} 栋建筑、${Object.keys(PROPS).length} 种物件、车辆、动物、界面图标、avatar.png、emotes.png`);

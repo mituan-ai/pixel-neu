@@ -6,7 +6,7 @@
 import { existsSync } from 'node:fs';
 import { FACING, fromView, toView, viewSize, type View } from '../shared/view.ts';
 import { heights, type BuildingModel, type PartModel } from './buildings.ts';
-import type { PalKey } from './palette.ts';
+import { PAL, type Color, type PalKey } from './palette.ts';
 import { Pix, loadPix, rng } from './pix.ts';
 import { BUILDING } from './tiles.ts';
 
@@ -40,8 +40,16 @@ interface RoofCtx {
   level: number;
 }
 
+interface GlassPixel {
+  color: PalKey;
+  window: string;
+  door: boolean;
+}
+type FacadePixel = PalKey | GlassPixel;
+type Paint = (x: number, y: number, c: Color | GlassPixel, group?: string) => void;
+
 interface Style {
-  facade(c: FacadeCtx): PalKey;
+  facade(c: FacadeCtx): FacadePixel;
   /** 屋顶上的构件；返回 null 画素屋面 */
   roof?(c: RoofCtx): PalKey | null;
 }
@@ -49,6 +57,64 @@ interface Style {
 // 立面尺寸按 1 m = 8 px 换算
 /** 一层里窗的上下范围（离本层地面的像素）：窗台 0.9 m，窗高 2 m */
 const WIN0 = 7, WIN1 = 23;
+
+/** 玻璃取色和窗格编号一起返回，门洞始终亮灯。 */
+function glass(color: PalKey, window: string, door = false): GlassPixel {
+  return { color, window, door };
+}
+
+/** 同一窗格共用亮灯状态，非玻璃像素在蒙版里清空。 */
+function buildingPainter(pix: Pix, light: boolean, seed: number): { paint: Paint; finish: () => void } {
+  if (!light) return { paint: (x, y, c) => pix.px(x, y, typeof c === 'object' ? c.color : c), finish: () => {} };
+  const cells = new Int32Array(pix.w * pix.h), windows = new Map<string, number>();
+  const parent = [0], doors = new Set<number>();
+  const root = (id: number): number => {
+    while (parent[id] !== id) {
+      parent[id] = parent[parent[id]];
+      id = parent[id];
+    }
+    return id;
+  };
+  const paint: Paint = (x, y, c, group = '') => {
+    x |= 0;
+    y |= 0;
+    if (x < 0 || y < 0 || x >= pix.w || y >= pix.h) return;
+    const i = y * pix.w + x;
+    cells[i] = 0;
+    if (typeof c !== 'object') return;
+    const key = `${group}:${c.window}`;
+    if (!windows.has(key)) {
+      windows.set(key, parent.length);
+      parent.push(parent.length);
+    }
+    const id = windows.get(key)!;
+    cells[i] = id;
+    if (c.door) doors.add(id);
+  };
+  return { paint, finish: () => {
+    for (let y = 0; y < pix.h; y++)
+      for (let x = 0; x < pix.w; x++) {
+        const i = y * pix.w + x;
+        if (!cells[i]) continue;
+        for (const j of [x + 1 < pix.w ? i + 1 : i, y + 1 < pix.h ? i + pix.w : i]) {
+          if (cells[j]) parent[root(cells[j])] = root(cells[i]);
+        }
+      }
+    const doorRoots = new Set([...doors].map(root)), colors = new Map<number, PalKey | null>(), rand = rng(seed);
+    for (let i = 0; i < cells.length; i++) {
+      if (!cells[i]) continue;
+      const id = root(cells[i]);
+      if (!colors.has(id)) colors.set(id, doorRoots.has(id) ? 'flowerY' : rand() < 0.6 ? (rand() < 1 / 3 ? 'gold' : 'flowerY') : null);
+      const color = colors.get(id)!;
+      if (color) pix.px(i % pix.w, Math.floor(i / pix.w), color);
+    }
+  } };
+}
+
+/** 屋面和塔顶的矩形也按同一遮挡顺序清空蒙版。 */
+function paintRect(paint: Paint, x: number, y: number, w: number, h: number, c: Color): void {
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) paint(x + i, y + j, c);
+}
 
 /** 窗格：外框深一档，左上亮、右下暗，中间一道横档 */
 function pane(xs: number, ys: number, w: number, h: number): PalKey {
@@ -64,7 +130,7 @@ const plain: Style = {
     if (hBottom === 0 && yg < PLINTH) return 'plain0';
     if (yg >= hTop - PARAPET) return yg === hTop - 1 ? 'plain2' : 'plain1';
     const ys = (yg - PLINTH) % STOREY, xs = x % 32;
-    if (ys >= WIN0 && ys < WIN1 && xs >= 10 && xs < 22) return pane(xs - 10, WIN1 - 1 - ys, 12, WIN1 - WIN0);
+    if (ys >= WIN0 && ys < WIN1 && xs >= 10 && xs < 22) return glass(pane(xs - 10, WIN1 - 1 - ys, 12, WIN1 - WIN0), `plain:${Math.floor(x / 32)}:${Math.floor((yg - PLINTH) / STOREY)}`);
     if (ys === WIN0 - 1 && xs >= 9 && xs < 23) return 'plain1';
     return 'plain2';
   },
@@ -89,21 +155,21 @@ const info: Style = {
         const col = [-80, -72, -26, 22, 68, 76].find((c) => rel >= c && rel < c + 4);
         if (col !== undefined) return rel === col ? 'beige3' : rel === col + 3 ? 'beige1' : 'beige2';
         const door = [-49, 0, 49].find((c) => Math.abs(rel - c) < 12);
-        if (door !== undefined && yg < PLINTH + 24) return Math.abs(rel - door) === 11 || yg === PLINTH + 23 ? 'glass0' : pane(rel - door + 11, PLINTH + 23 - yg, 22, 24);
+        if (door !== undefined && yg < PLINTH + 24) return glass(Math.abs(rel - door) === 11 || yg === PLINTH + 23 ? 'glass0' : pane(rel - door + 11, PLINTH + 23 - yg, 22, 24), `door:${door}`, true);
         return 'slate';
       }
       const bay = [-38, 0, 38].find((c) => Math.abs(rel - c) < 11);
       if (bay !== undefined && storey >= 2) {
         if (ys < 8) return ys === 0 ? 'brick0' : 'brick1';
-        return ys >= STOREY - 2 ? 'beige1' : pane(rel - bay + 11, STOREY - 3 - ys, 22, STOREY - 10);
+        return ys >= STOREY - 2 ? 'beige1' : glass(pane(rel - bay + 11, STOREY - 3 - ys, 22, STOREY - 10), `bay:${bay}:${storey}`);
       }
       const small = Math.abs(Math.abs(rel) - 76) < 4;
-      if (small && ys >= 12 && ys < 20) return ys === 12 ? 'glass0' : 'glass1';
+      if (small && ys >= 12 && ys < 20) return glass(ys === 12 ? 'glass0' : 'glass1', `small:${Math.sign(rel)}:${storey}`);
       return Math.abs(rel) === 50 ? 'beige1' : Math.abs(rel) === 49 ? 'beige3' : 'beige2';
     }
     if (storey === 1 && ys < 2) return ys ? 'beige1' : 'beige3';
     const xs = (((rel - 16) % 32) + 32) % 32;
-    if (ys >= WIN0 && ys < WIN1 && xs >= 8 && xs < 24) return pane(xs - 8, WIN1 - 1 - ys, 16, WIN1 - WIN0);
+    if (ys >= WIN0 && ys < WIN1 && xs >= 8 && xs < 24) return glass(pane(xs - 8, WIN1 - 1 - ys, 16, WIN1 - WIN0), `info:${Math.floor((rel - 16) / 32)}:${storey}`);
     if (ys === WIN0 - 1 && xs >= 7 && xs < 25) return 'beige1';
     return xs === 0 ? 'beige3' : 'beige2';
   },
@@ -133,7 +199,7 @@ const library: Style = {
     const ys = (yg - PLINTH) % STOREY, xs = x % 12;
     if (xs < 2) return xs === 0 ? 'grey3' : 'grey2';
     if (ys < 4) return ys === 3 ? 'grey2' : 'grey1';
-    return pane(xs - 2, STOREY - 1 - ys, 10, STOREY - 4);
+    return glass(pane(xs - 2, STOREY - 1 - ys, 10, STOREY - 4), `library:${Math.floor(x / 12)}:${Math.floor((yg - PLINTH) / STOREY)}`);
   },
   roof({ fx, fy, x, y }) {
     for (const [x0, y0, x1, y1] of ATRIA) {
@@ -201,6 +267,35 @@ function elevation(style: string, face: string): Pix | null {
   return elevations.get(key)!;
 }
 
+const GLASS = ['glass0', 'glass1', 'glass2'] as const;
+const elevationPanes = new Map<Pix, { cells: Int32Array; doors: Set<number> }>();
+
+/** 手绘立面在取色前按玻璃连通窗格分组，library-S 最低的玻璃排是三樘门。 */
+function elevationWindows(pix: Pix): { cells: Int32Array; doors: Set<number> } {
+  if (!elevationPanes.has(pix)) {
+    const cells = new Int32Array(pix.w * pix.h), doors = new Set<number>();
+    const isGlass = (i: number) => pix.data[i * 4 + 3] && GLASS.some((c) => PAL[c] === ((pix.data[i * 4] << 16) | (pix.data[i * 4 + 1] << 8) | pix.data[i * 4 + 2]));
+    let count = 0, bottom = -1;
+    for (let i = 0; i < cells.length; i++) {
+      if (cells[i] || !isGlass(i)) continue;
+      const queue = [i], id = ++count;
+      cells[i] = id;
+      for (let k = 0; k < queue.length; k++) {
+        const j = queue[k], x = j % pix.w, y = Math.floor(j / pix.w);
+        bottom = Math.max(bottom, y);
+        for (const n of [x > 0 ? j - 1 : -1, x < pix.w - 1 ? j + 1 : -1, j - pix.w, j + pix.w]) {
+          if (n < 0 || n >= cells.length || cells[n] || !isGlass(n)) continue;
+          cells[n] = id;
+          queue.push(n);
+        }
+      }
+    }
+    for (let x = 0; x < pix.w; x++) if (cells[bottom * pix.w + x]) doors.add(cells[bottom * pix.w + x]);
+    elevationPanes.set(pix, { cells, doors });
+  }
+  return elevationPanes.get(pix)!;
+}
+
 /** 世界朝向的数组转到视角下（宽 w、高 h） */
 function rotateArr<T extends Uint8Array | Float32Array>(v: View, a: T, w: number, h: number, make: (n: number) => T): { a: T; w: number; h: number } {
   const s = viewSize(v, w, h);
@@ -225,6 +320,15 @@ function surface(roof: PartModel['roof'], hgt: (x: number, y: number) => number,
 }
 
 export function drawBuilding(b: BuildingModel, view: View = 0): Pix {
+  return renderBuilding(b, view, false);
+}
+
+export function drawBuildingLight(b: BuildingModel, view: View): Pix {
+  return renderBuilding(b, view, true);
+}
+
+/** 楼贴图和窗灯蒙版共用屋面、立面及遮挡顺序。 */
+function renderBuilding(b: BuildingModel, view: View, light: boolean): Pix {
   const face = FACING[view];
   const elev = elevation(b.style, face);
   const style = STYLES[b.style] ?? plain;
@@ -237,6 +341,7 @@ export function drawBuilding(b: BuildingModel, view: View = 0): Pix {
   const hr = (x: number, y: number) => Math.round(hf(x, y));
   const top = Math.ceil(hw.reduce((a, v) => Math.max(a, v), 0)) + b.extraTop;
   const pix = new Pix(W + SHADOW, H + top);
+  const { paint, finish } = buildingPainter(pix, light, b.id);
   const rand = rng(Math.abs(b.id) || 7);
   /** 视角下屋顶平面的像素 → 世界朝向下的像素（屋顶花样按世界方向排） */
   const toWorldPx = (x: number, y: number) => fromView(view, b.w, b.h, x + 0.5, y + 0.5);
@@ -260,7 +365,7 @@ export function drawBuilding(b: BuildingModel, view: View = 0): Pix {
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++)
       if (part(x, y) && !part(x + 1, y)) for (let k = 1; k <= SHADOW; k++) if (!part(x + k, y)) shade[y * (W + SHADOW) + x + k] = 1;
-  for (let y = 0; y < H; y++) for (let x = 0; x < W + SHADOW; x++) if (shade[y * (W + SHADOW) + x]) pix.px(x, top + y, 'shadow', 70);
+  if (!light) for (let y = 0; y < H; y++) for (let x = 0; x < W + SHADOW; x++) if (shade[y * (W + SHADOW) + x]) pix.px(x, top + y, 'shadow', 70);
 
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
@@ -283,7 +388,7 @@ export function drawBuilding(b: BuildingModel, view: View = 0): Pix {
           if (shadowed && col === 'roof1') col = 'roof0';
         }
       }
-      pix.px(x, roofY, col);
+      paint(x, roofY, col);
       // 立面：前面那个像素更矮时，画出两者高度差那一段
       const front = hr(x, y + 1);
       if (front >= hh) continue;
@@ -291,7 +396,7 @@ export function drawBuilding(b: BuildingModel, view: View = 0): Pix {
       const leftOpen = (yg: number) => hr(x - 1, y) <= yg && hr(x - 1, y + 1) <= yg;
       const rightOpen = (yg: number) => hr(x + 1, y) <= yg;
       for (let yg = front; yg < hh; yg++) {
-        let c: PalKey;
+        let c: FacadePixel;
         if (yg >= pm.wall) c = surface(pm.roof, hf, x, y, Math.floor(wp.x), Math.floor(wp.y));
         else if (pm.roof === 'stands') c = yg % 6 === 0 ? 'stone1' : 'stone2';
         else {
@@ -300,15 +405,21 @@ export function drawBuilding(b: BuildingModel, view: View = 0): Pix {
             const ex = x - Math.round(W / 2) + Math.round(elev.w / 2), ey = elev.h - 1 - yg;
             const o = (ey * elev.w + ex) * 4;
             if (ex >= 0 && ex < elev.w && ey >= 0 && elev.data[o + 3] > 0) {
-              pix.px(x, top + y - yg, (elev.data[o] << 16) | (elev.data[o + 1] << 8) | elev.data[o + 2]);
+              const color = (elev.data[o] << 16) | (elev.data[o + 1] << 8) | elev.data[o + 2];
+              const g = GLASS.find((c) => PAL[c] === color);
+              if (g) {
+                const { cells, doors } = elevationWindows(elev), id = cells[ey * elev.w + ex];
+                paint(x, top + y - yg, glass(g, `elevation:${id}`, doors.has(id)), face);
+              } else paint(x, top + y - yg, color);
               continue;
             }
           }
           c = style.facade({ x, yg, face, level: k, hTop: pm.wall, hBottom: front, axis });
         }
-        if (leftOpen(yg)) c = shadeKey(c, +1);
-        else if (rightOpen(yg)) c = shadeKey(c, -1);
-        pix.px(x, top + y - yg, c);
+        let color = typeof c === 'object' ? c.color : c;
+        if (leftOpen(yg)) color = shadeKey(color, +1);
+        else if (rightOpen(yg)) color = shadeKey(color, -1);
+        paint(x, top + y - yg, typeof c === 'object' ? { ...c, color } : color, face);
       }
     }
   }
@@ -319,11 +430,15 @@ export function drawBuilding(b: BuildingModel, view: View = 0): Pix {
       const wp = toWorldPx(x + 8, y + 8);
       if (style.roof?.({ x: Math.floor(wp.x), y: Math.floor(wp.y), fx: wp.x / b.w, fy: wp.y / b.h, inset: 99, level: part(x + 8, y + 8) })) continue;
       const ry = top + y - hr(x + 8, y + 8);
-      pix.rect(x + 2, ry + 2, 12, 7, 'roof2');
-      pix.rect(x + 2, ry + 9, 12, 3, 'roof0');
+      paintRect(paint, x + 2, ry + 2, 12, 7, 'roof2');
+      paintRect(paint, x + 2, ry + 9, 12, 3, 'roof0');
     }
 
-  if (b.style === 'info') drawInfoCrown(pix, part, W, H, hr, top, face);
+  if (b.style === 'info') {
+    if (light) renderInfoCrown(pix, part, W, H, hr, top, face, paint);
+    else drawInfoCrown(pix, part, W, H, hr, top, face);
+  }
+  finish();
   return pix;
 }
 
@@ -347,6 +462,11 @@ function shadeKey(c: PalKey, d: number): PalKey {
  * 砖红饰面只有北面有照片，其他朝向画成素面
  */
 function drawInfoCrown(pix: Pix, part: (x: number, y: number) => number, W: number, H: number, hr: (x: number, y: number) => number, top: number, face: string): void {
+  renderInfoCrown(pix, part, W, H, hr, top, face, buildingPainter(pix, false, 0).paint);
+}
+
+/** 塔顶的窗户和塔身共用逐窗亮灯与遮挡判定。 */
+function renderInfoCrown(pix: Pix, part: (x: number, y: number) => number, W: number, H: number, hr: (x: number, y: number) => number, top: number, face: string, paint: Paint): void {
   let bottom = -1;
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (part(x, y) === 2) bottom = y;
   if (bottom < 0) return;
@@ -356,18 +476,19 @@ function drawInfoCrown(pix: Pix, part: (x: number, y: number) => number, W: numb
   const axis = (tx0 + tx1) / 2, tw = tx1 - tx0;
   const towerRoofFront = top + bottom + 1 - hr(Math.floor(axis), bottom);
   /** 画一个方塔体：底边在 base，正面高 fh，顶面进深 d；body 给正面每个像素取色 */
-  const block = (w: number, fh: number, d: number, base: number, body: (x: number, y: number) => PalKey) => {
+  const block = (w: number, fh: number, d: number, base: number, body: (x: number, y: number) => FacadePixel) => {
     const x0 = Math.round(axis - w / 2);
     for (let y = 0; y < fh; y++)
       for (let x = 0; x < w; x++) {
-        let col = body(x, y);
+        const c = body(x, y);
+        let col = typeof c === 'object' ? c.color : c;
         if (x === 0) col = shadeKey(col, +1);
         if (x === w - 1) col = shadeKey(col, -1);
-        pix.px(x0 + x, base - fh + y, col);
+        paint(x0 + x, base - fh + y, typeof c === 'object' ? { ...c, color: col } : col, 'crown');
       }
-    pix.rect(x0, base - fh - d, w, d, 'beige1');
-    pix.hline(x0, base - fh - d, w, 'beige3');
-    pix.vline(x0, base - fh - d, d, 'beige3');
+    paintRect(paint, x0, base - fh - d, w, d, 'beige1');
+    paintRect(paint, x0, base - fh - d, w, 1, 'beige3');
+    paintRect(paint, x0, base - fh - d, 1, d, 'beige3');
     return base - fh - Math.floor(d / 2);
   };
   // 退台：檐口 3 px，下面三扇大窗
@@ -376,18 +497,18 @@ function drawInfoCrown(pix: Pix, part: (x: number, y: number) => number, W: numb
   base = block(w1, fh1, 14, base, (x, y) => {
     if (y < 3) return y === 2 ? 'beige1' : 'beige3';
     const bay = w1 / 3, xs = x % bay;
-    if (y >= 9 && y < fh1 - 5 && xs >= 4 && xs < bay - 4) return pane(Math.floor(xs - 4), fh1 - 6 - y, Math.floor(bay - 8), fh1 - 14);
+    if (y >= 9 && y < fh1 - 5 && xs >= 4 && xs < bay - 4) return glass(pane(Math.floor(xs - 4), fh1 - 6 - y, Math.floor(bay - 8), fh1 - 14), `terrace:${Math.floor(x / bay)}`);
     return 'beige2';
   });
   // 小塔：顶上一层小窗，中间砖红饰面
   const w2 = Math.round(tw * 0.26), fh2 = Math.round(STOREY * 2.3);
   base = block(w2, fh2, 10, base, (x, y) => {
     if (y < 3) return y === 2 ? 'beige1' : 'beige3';
-    if (y >= 6 && y < 14 && x % 6 >= 2 && x % 6 < 5) return 'glass0';
+    if (y >= 6 && y < 14 && x % 6 >= 2 && x % 6 < 5) return glass('glass0', `tower:${Math.floor(x / 6)}`);
     if (face === 'N' && y >= 24 && y < fh2 - 6 && x >= Math.round(w2 * 0.25) && x < Math.round(w2 * 0.75)) return y % 4 === 0 ? 'brick0' : 'brick1';
     return 'beige2';
   });
   // 旗杆与旗
-  pix.rect(Math.round(axis), base - 34, 1, 34, 'stone0');
-  pix.rect(Math.round(axis) + 1, base - 34, 10, 6, 'flag');
+  paintRect(paint, Math.round(axis), base - 34, 1, 34, 'stone0');
+  paintRect(paint, Math.round(axis) + 1, base - 34, 10, 6, 'flag');
 }
