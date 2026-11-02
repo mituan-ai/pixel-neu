@@ -114,13 +114,80 @@ export const PHRASES = [
 ];
 
 /** 联机消息名，客户端发、服务端收 */
-export const MSG = { move: 'move', emote: 'emote', say: 'say' } as const;
+export const MSG = {
+  move: 'move', emote: 'emote', say: 'say',
+  chat: 'chat', history: 'history', report: 'report', block: 'block', unblock: 'unblock', profile: 'profile',
+} as const;
 
 /** 服务端广播给其他人的瞬时事件 */
-export const EVENT = { emote: 'emote', say: 'say', snap: 'snap' } as const;
+export const EVENT = {
+  emote: 'emote', say: 'say', snap: 'snap',
+  chat: 'chat', history: 'history', notice: 'notice', weather: 'weather', hello: 'hello',
+} as const;
 
 /** 朝向：与角色精灵表的行顺序一致 */
 export const DIR = { down: 0, left: 1, right: 2, up: 3 } as const;
 
 /** 同一个人发表情或短语的最短间隔（毫秒） */
 export const CHAT_COOLDOWN = 800;
+
+/** 单房间旁观（访客）上限：访客只收状态，不进 players，不占 ROOM_MAX */
+export const GUEST_MAX = 60;
+
+/** 文字聊天 */
+export const CHAT = {
+  /** 每条最多多少字 */
+  max: 80,
+  /** 同一个人两条消息的最短间隔（毫秒） */
+  cooldown: 2000,
+  /** 附近频道的范围（世界像素，40 m） */
+  nearRange: 320,
+  /** 注册不满这么久（毫秒）只能在附近频道说话 */
+  newbie: 10 * 60_000,
+  /** 历史条数 */
+  squareHistory: 100,
+  roomHistory: 200,
+} as const;
+
+/** 讨论室：id 是协议的一部分，只追加；at 是会提示进入这个讨论室的地名关键字 */
+export const DISCUSS = [
+  { id: 'fresh', name: '新生答疑', at: ['北门', '正门', '南门'] },
+  { id: 'study', name: '自习考研', at: ['图书馆', '学馆', '教学馆'] },
+  { id: 'sport', name: '约球约跑', at: ['体育场', '运动场', '篮球场', '体育馆', '球场'] },
+  { id: 'lost', name: '失物招领', at: [] },
+  { id: 'chat', name: '闲聊', at: [] },
+] as const;
+
+/** 频道：near、square，或 room:<讨论室 id> */
+export type Channel = 'near' | 'square' | `room:${(typeof DISCUSS)[number]['id']}`;
+
+export function isChannel(v: unknown): v is Channel {
+  return v === 'near' || v === 'square' || (typeof v === 'string' && DISCUSS.some((d) => v === `room:${d.id}`));
+}
+
+/** 一条聊天消息（服务端发给客户端） */
+export interface ChatLine {
+  /** 消息编号（数据库主键），举报用；附近频道也存库 */
+  id: number;
+  ch: Channel;
+  /** 发言人账号编号，拉黑用 */
+  uid: number;
+  /** 发言人在本房间的 sessionId，附近频道用来出头顶气泡；跨房间的消息为空 */
+  sid: string;
+  name: string;
+  text: string;
+  /** 毫秒时间戳 */
+  t: number;
+}
+
+/** 文字消息清洗：去控制字符、合并空白、限长。空字符串表示不发 */
+export function cleanText(raw: unknown): string {
+  const s = String(raw ?? '')
+    .replace(/[\p{C}]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return [...s].slice(0, CHAT.max).join('');
+}
+
+/** 中国大陆手机号 */
+export const PHONE_RE = /^1[3-9]\d{9}$/;

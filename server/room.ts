@@ -1,10 +1,14 @@
-// 一个“平行校园”房间：同步所有人的位置与外观，转发表情和短语。
+// 一个“平行校园”房间：同步所有人的位置与外观，转发表情、短语和文字聊天，广播天气。
 // 位置由客户端上报，服务端只做合理性校验（速度、碰撞），不合理就把客户端拉回上一个合法位置。
+// 登录的人进 players（别人看得见）；访客只收状态，不进 players，不能发言，也不占 ROOM_MAX。
 import { readFileSync } from 'node:fs';
-import { Room, type Client } from '@colyseus/core';
-import { CHAT_COOLDOWN, EMOTES, EVENT, MSG, PHRASES, ROOM_MAX, cleanLook, cleanName } from '../shared/social.ts';
+import { Room, ServerError, type AuthContext, type Client } from '@colyseus/core';
+import { CHAT, CHAT_COOLDOWN, EMOTES, EVENT, GUEST_MAX, MSG, PHRASES, ROOM_MAX } from '../shared/social.ts';
 import { CampusState, Player } from '../shared/state.ts';
 import { DEV_BOOST, LAYER, WALK_SPEED, Walkable, prop, type TiledMap } from '../shared/world.ts';
+import { chatHub, type Peer } from './chat.ts';
+import { openDb, type User } from './db.ts';
+import { weather } from './weather.ts';
 
 /** 地图：线上由 MAP_FILE 指定（打包后相对路径不可靠），开发时读仓库里的 assets/map.json */
 const map: TiledMap = JSON.parse(readFileSync(process.env.MAP_FILE ?? new URL('../assets/map.json', import.meta.url), 'utf8'));
@@ -21,26 +25,43 @@ const SPEED_SLACK = 1.6;
 /** 本地开发（npm run server 带 --dev）放行开发者模式的 Shift 加速 */
 const MAX_SPEED = WALK_SPEED * (process.argv.includes('--dev') ? DEV_BOOST : 1);
 
+const db = openDb();
+const hub = chatHub(db);
+
 interface Seen {
   x: number;
   y: number;
   t: number;
   chat: number;
+  user?: User;
+  /** 在 players 里（别人看得见） */
+  visible: boolean;
+}
+
+interface JoinOptions {
+  token?: unknown;
 }
 
 export class CampusRoom extends Room<{ state: CampusState }> {
-  maxClients = ROOM_MAX;
+  maxClients = ROOM_MAX + GUEST_MAX;
   maxMessagesPerSecond = 30;
   state = new CampusState();
   private seen = new Map<string, Seen>();
+  private unsubscribe?: () => void;
 
   messages = {
     [MSG.move]: (client: Client, m: { x?: unknown; y?: unknown; dir?: unknown; moving?: unknown }) => {
-      const p = this.state.players.get(client.sessionId);
       const s = this.seen.get(client.sessionId);
-      if (!p || !s) return;
+      if (!s) return;
       const x = Number(m.x), y = Number(m.y);
       if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      const p = this.state.players.get(client.sessionId);
+      // 访客的位置只用来投递附近频道的消息，不校验
+      if (!p) {
+        s.x = x;
+        s.y = y;
+        return;
+      }
       const now = Date.now();
       const maxStep = (MAX_SPEED * SPEED_SLACK * Math.max(50, now - s.t)) / 1000 + 4;
       if (Math.hypot(x - s.x, y - s.y) > maxStep || walk.footBlocked(x, y) || !walk.reachable(s, { x, y })) {
@@ -61,10 +82,63 @@ export class CampusRoom extends Room<{ state: CampusState }> {
       if (this.chatAllowed(client) && Number.isInteger(id) && (id as number) >= 0 && (id as number) < PHRASES.length)
         this.broadcast(EVENT.say, { id: client.sessionId, phrase: id });
     },
+    [MSG.chat]: (client: Client, m: { ch?: unknown; text?: unknown }) => {
+      const s = this.seen.get(client.sessionId);
+      if (!s) return;
+      const r = hub.post(s.user, client.sessionId, m?.ch, m?.text);
+      if (typeof r === 'string') {
+        if (r) client.send(EVENT.notice, { text: r });
+        return;
+      }
+      if (r.ch !== 'near') return;
+      const near: Peer[] = [];
+      for (const c of this.clients) {
+        const o = this.seen.get(c.sessionId), peer = hub.peers.get(c.sessionId);
+        if (o && peer && Math.hypot(o.x - s.x, o.y - s.y) <= CHAT.nearRange) near.push(peer);
+      }
+      hub.deliver(r, near);
+    },
+    [MSG.history]: (client: Client, ch: unknown) => {
+      const peer = hub.peers.get(client.sessionId);
+      const h = peer && hub.history(peer, ch);
+      if (h) client.send(EVENT.history, h);
+    },
+    [MSG.report]: (client: Client, msg: unknown) => {
+      if (hub.report(this.seen.get(client.sessionId)?.user, msg)) client.send(EVENT.notice, { text: '已举报，谢谢。管理员会尽快处理' });
+    },
+    [MSG.block]: (client: Client, uid: unknown) => {
+      if (hub.block(this.seen.get(client.sessionId)?.user, uid, true)) client.send(EVENT.notice, { text: '已拉黑，你们互相看不到对方的消息' });
+    },
+    [MSG.unblock]: (client: Client, uid: unknown) => {
+      if (hub.block(this.seen.get(client.sessionId)?.user, uid, false)) client.send(EVENT.notice, { text: '已取消拉黑' });
+    },
+    /** 资料在 /api/profile 改完后，通知房间按库里的新资料更新外观 */
+    [MSG.profile]: (client: Client) => {
+      const s = this.seen.get(client.sessionId);
+      const u = s?.user && db.user(s.user.id);
+      const p = this.state.players.get(client.sessionId);
+      if (!s || !u) return;
+      s.user = u;
+      if (p) Object.assign(p, { name: u.name, ...u.look });
+    },
   };
 
-  onJoin(client: Client, options: { name?: unknown; look?: object } = {}) {
-    const look = cleanLook(options.look);
+  onCreate() {
+    this.unsubscribe = weather.subscribe((w) => this.broadcast(EVENT.weather, w));
+  }
+
+  onDispose() {
+    this.unsubscribe?.();
+  }
+
+  onAuth(_client: Client, options: JoinOptions = {}, _context: AuthContext): { user?: User } {
+    const user = db.userByToken(options.token);
+    if (!user && this.clients.length - this.state.players.size >= GUEST_MAX) throw new ServerError(4001, '旁观人数已满');
+    return { user };
+  }
+
+  onJoin(client: Client, _options: JoinOptions = {}, auth: { user?: User } = {}) {
+    const user = auth.user;
     // 出生点附近随机散开，避免大家叠在同一格
     let x = spawn.x, y = spawn.y;
     for (let k = 0; k < 20; k++) {
@@ -76,19 +150,37 @@ export class CampusRoom extends Room<{ state: CampusState }> {
         break;
       }
     }
-    const p = new Player({ name: cleanName(options.name), ...look, x, y, dir: 3, moving: false });
-    this.state.players.set(client.sessionId, p);
-    this.seen.set(client.sessionId, { x, y, t: Date.now(), chat: 0 });
+    const visible = !!user && this.state.players.size < ROOM_MAX;
+    if (visible) this.state.players.set(client.sessionId, new Player({ name: user.name, ...user.look, x, y, dir: 3, moving: false, uid: user.id }));
+    this.seen.set(client.sessionId, { x, y, t: Date.now(), chat: 0, user, visible });
+    hub.peers.set(client.sessionId, {
+      sid: client.sessionId,
+      uid: user?.id ?? 0,
+      blocked: user ? db.blocked(user.id) : new Set(),
+      send: (type, msg) => client.send(type, msg),
+    });
+    client.send(EVENT.hello, { x, y, visible, weather: weather.get() });
+    this.relock();
   }
 
   onLeave(client: Client) {
     this.state.players.delete(client.sessionId);
     this.seen.delete(client.sessionId);
+    hub.peers.delete(client.sessionId);
+    this.relock();
+  }
+
+  /** 登录的人满 40 或访客满 60 就锁房间，让新来的人进新的平行房间 */
+  private relock(): void {
+    const guests = this.clients.length - this.state.players.size;
+    const full = this.state.players.size >= ROOM_MAX || guests >= GUEST_MAX || this.clients.length >= this.maxClients;
+    if (full && !this.locked) void this.lock();
+    else if (!full && this.locked) void this.unlock();
   }
 
   private chatAllowed(client: Client): boolean {
     const s = this.seen.get(client.sessionId);
-    if (!s) return false;
+    if (!s?.visible) return false;
     const now = Date.now();
     if (now - s.chat < CHAT_COOLDOWN) return false;
     s.chat = now;

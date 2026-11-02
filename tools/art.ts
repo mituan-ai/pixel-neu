@@ -578,7 +578,16 @@ TREES.forEach((name, i) => {
 });
 
 {
-  const { atlas, meta } = packAtlas(PROPS);
+  // 半透明的投影像素不进图集：游戏里按太阳位置实时投影（src/shadows.ts），预览图上保留
+  const solid = Object.fromEntries(
+    Object.entries(PROPS).map(([k, a]) => {
+      const pix = new Pix(a.pix.w, a.pix.h);
+      pix.data.set(a.pix.data);
+      for (let i = 3; i < pix.data.length; i += 4) if (pix.data[i] < 255) pix.data[i - 3] = pix.data[i - 2] = pix.data[i - 1] = pix.data[i] = 0;
+      return [k, { ...a, pix }];
+    }),
+  );
+  const { atlas, meta } = packAtlas(solid);
   save(atlas, 'props.png');
   writeFileSync(out('props.json'), JSON.stringify(meta, null, 1));
 }
@@ -755,5 +764,37 @@ const buildingArt = new Map<string, Pix>();
       }
   }
   night.save(new URL('../data/preview-night.png', import.meta.url));
+
+  // 分享卡片图 og.png：北门到信息学馆，1200×630（微信、QQ 转发链接时的预览图）
+  const og = new Pix(1200, 630), ox = (70 - EXTENT.x0) * PPM, oy = (-15 - EXTENT.y0) * PPM;
+  for (let y = 0; y < og.h; y++) og.data.set(pv.data.subarray(((oy + y) * pv.w + ox) * 4, ((oy + y) * pv.w + ox + og.w) * 4), y * og.w * 4);
+  save(og, 'og.png');
+}
+
+// ---------- 应用图标（PWA、收藏夹）：32×32 的像素校门，放大成 192、512 ----------
+{
+  const p = new Pix(32, 32);
+  p.rect(0, 0, 32, 22, 'uiBlue');
+  p.rect(0, 22, 32, 10, 'grass2');
+  p.rect(0, 22, 32, 1, 'grass3');
+  // 太阳
+  p.rect(23, 4, 5, 5, 'uiOrange');
+  p.rect(24, 3, 3, 7, 'uiOrange');
+  p.rect(22, 5, 7, 3, 'uiOrange');
+  // 四根石柱，中间两根高，柱头一道金色
+  for (const [x, h] of [[4, 11], [11, 15], [19, 15], [26, 11]] as const) {
+    p.rect(x - 2, 22 - h, 7, 3, 'ink');
+    p.rect(x - 1, 23 - h, 5, h + 1, 'ink');
+    p.rect(x, 24 - h, 3, h, 'stone3');
+    p.vline(x + 2, 24 - h, h, 'stone1');
+    p.rect(x - 1, 23 - h, 5, 2, 'gold');
+  }
+  // 路
+  p.rect(14, 24, 4, 8, 'stone2');
+  for (const n of [192, 512]) {
+    const k = n / 32, big = new Pix(n, n);
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) big.data.set(p.data.subarray(((y / k | 0) * 32 + (x / k | 0)) * 4, ((y / k | 0) * 32 + (x / k | 0)) * 4 + 4), (y * n + x) * 4);
+    save(big, `icon-${n}.png`);
+  }
 }
 console.log(`美术已生成：${buildingArt.size} 栋建筑、${Object.keys(PROPS).length} 种物件、车辆、动物、界面图标、avatar.png、emotes.png`);

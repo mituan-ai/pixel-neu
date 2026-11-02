@@ -2,14 +2,45 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-    <meta name="description" content="像素东大 · Pixel NEU —— 在像素风的东北大学南湖校区里漫步、相遇。由谜团 mituan 开发。" />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'><rect width='16' height='16' fill='%232a2433'/><rect x='7' y='1' width='1' height='3' fill='%23d8d2c4'/><rect x='8' y='1' width='2' height='1' fill='%23c0463e'/><rect x='6' y='4' width='4' height='2' fill='%23d8d2c4'/><rect x='5' y='6' width='6' height='3' fill='%23d8d2c4'/><rect x='1' y='9' width='14' height='5' fill='%23d8d2c4'/><rect x='6' y='7' width='1' height='1' fill='%234f6a85'/><rect x='9' y='7' width='1' height='1' fill='%234f6a85'/><rect x='2' y='10' width='12' height='1' fill='%234f6a85'/><rect x='2' y='12' width='12' height='1' fill='%234f6a85'/><rect x='0' y='14' width='16' height='2' fill='%23f0c94a'/></svg>" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="description" content="像素东大 · Pixel NEU —— 在像素风的东北大学南湖校区里散步、相遇、聊天。非官方作品，由谜团 mituan 开发。" />
+    <meta name="theme-color" content="#3fa9f5" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="像素东大" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="像素东大 · Pixel NEU" />
+    <meta property="og:description" content="在像素风的南湖校区里散步、相遇、聊天。楼、路、树按真实位置绘制，跟随沈阳真实的昼夜和天气。" />
+    <meta property="og:image" content="og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icon-192.png" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
     <title>像素东大 · Pixel NEU</title>
+    <style>
+      /* 加载页的样式写在这里，脚本还没下载完就能显示 */
+      html, body { margin: 0; height: 100%; background: #8fd18b; }
+      #loading { position: fixed; inset: 0; z-index: 50; background: linear-gradient(#bfe6ff 0 60%, #8fd18b 60%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center; font: 14px 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #2a2433; transition: opacity .4s; }
+      #loading.done { opacity: 0; pointer-events: none; }
+      #loading img { width: 128px; height: 128px; image-rendering: pixelated; }
+      #loading h1 { margin: 0; font-size: 28px; letter-spacing: 2px; text-shadow: 2px 2px 0 #fff; }
+      #loading .bar { width: min(280px, 80vw); height: 14px; border: 2px solid #2a2433; background: #fff; box-shadow: 0 2px 0 #2a2433; box-sizing: border-box; }
+      #loading .bar i { display: block; height: 100%; width: 4%; background: #ffb627; transition: width .2s; }
+      #loading .note { color: #3a4a3a; font-size: 12px; }
+    </style>
   </head>
   <body>
     <div id="game"></div>
     <div id="ui"></div>
+    <div id="loading" role="progressbar" aria-label="加载中">
+      <img src="icon-192.png" alt="" />
+      <h1>像素东大</h1>
+      <div>在像素风的南湖校区里散步、相遇</div>
+      <div class="bar"><i id="loading-bar"></i></div>
+      <div class="note" id="loading-text">正在加载地图…</div>
+      <div class="note">谜团 mituan 开发 · 非官方作品</div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

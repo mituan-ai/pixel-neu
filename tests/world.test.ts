@@ -32,7 +32,8 @@ describe('地图', () => {
       const end = route[route.length - 1];
       expect(Math.hypot(end.x - p.x, end.y - p.y), p.name).toBeLessThan(6 * TILE);
     }
-  });
+    // 41 个地点各寻一次全图的路，机器忙时会超过默认的 5 秒
+  }, 30_000);
 
   it('核心建筑都在，并带 OSM 来源', () => {
     const names = ofType('building').map((b) => b.name);

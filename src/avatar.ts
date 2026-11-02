@@ -23,6 +23,8 @@ export class Avatar {
   dir = 3;
   moving = false;
   private look: Look;
+  /** 昼夜色调，乘在部件颜色上 */
+  private shade = 0xffffff;
   private readonly body: Phaser.GameObjects.Container;
   private readonly ghost?: Phaser.GameObjects.Container;
   private animT = 0;
@@ -49,8 +51,7 @@ export class Avatar {
     for (const c of this.containers())
       AVATAR_PARTS.forEach((p, i) => {
         const s = c.list[i + 1] as Phaser.GameObjects.Sprite;
-        if (p.tint) s.setTint(tintOf(look, p.tint));
-        else s.clearTint();
+        s.setTint(mulColor(p.tint ? tintOf(look, p.tint) : 0xffffff, this.shade));
       });
     this.applyFrame();
   }
@@ -74,6 +75,18 @@ export class Avatar {
     this.applyFrame();
   }
 
+  /** 昼夜色调 */
+  setShade(c: number): void {
+    if (c === this.shade) return;
+    this.shade = c;
+    this.setLook(this.look);
+  }
+
+  /** 访客自己半透明 */
+  setAlpha(a: number): void {
+    this.body.setAlpha(a);
+  }
+
   destroy(): void {
     for (const c of this.containers()) c.destroy();
   }
@@ -87,4 +100,10 @@ export class Avatar {
     for (const c of this.containers())
       AVATAR_PARTS.forEach((p, i) => (c.list[i + 1] as Phaser.GameObjects.Sprite).setFrame(avatarFrame(p.block(this.look), display.dir(this.dir), col)));
   }
+}
+
+/** 两个颜色逐通道相乘 */
+export function mulColor(a: number, b: number): number {
+  const ch = (s: number) => Math.round((((a >> s) & 255) * ((b >> s) & 255)) / 255) << s;
+  return ch(16) | ch(8) | ch(0);
 }

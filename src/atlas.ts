@@ -2,7 +2,7 @@
 // 底图和小地图共用一张（每格一个像素），这里只按当前缩放放大绘制，再叠上地标、玩家和终点。
 import { TILE } from '../shared/world.ts';
 import { PIXEL_FONT } from './scene.ts';
-import { el } from './ui.ts';
+import { el } from './ui/dom.ts';
 
 export interface AtlasSource {
   dots(): { x: number; y: number; self: boolean }[];

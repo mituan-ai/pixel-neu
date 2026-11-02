@@ -18,6 +18,8 @@ export const Player = schema(
     y: t.float32(),
     dir: t.uint8(),
     moving: t.boolean(),
+    /** 账号编号：拉黑、举报用 */
+    uid: t.uint32(),
   },
   'Player',
 );

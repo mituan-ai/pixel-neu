@@ -1,0 +1,17 @@
+{
+  "name": "像素东大 · Pixel NEU",
+  "short_name": "像素东大",
+  "description": "在像素风的东北大学南湖校区里散步、相遇、聊天（非官方作品）",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#8fd18b",
+  "theme_color": "#3fa9f5",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

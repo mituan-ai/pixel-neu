@@ -11,6 +11,7 @@ import { MAT, WALKABLE } from './art-ground.ts';
 import { heights, loadBuildings, type BuildingModel, type OsmEl } from './buildings.ts';
 import { EXTENT, MAP_W as W, MAP_H as H, toWorld, type P } from './geo.ts';
 import { Ground, PH, PW } from './ground.ts';
+import { Pix } from './pix.ts';
 import { PPM } from './shape.ts';
 import { loadSurvey } from './survey.ts';
 import { TREES } from './tiles.ts';
@@ -342,6 +343,26 @@ for (const b of buildings) {
     height: b.h,
     properties: props({ sprite: `b${b.id}`, style: b.style, osm: b.id, top, front: fronts.join('|') }),
   });
+}
+
+// 高度图 assets/heights.png：每米一像素，红色通道是这一米见方里最高的屋面（米，向上取整）。
+// 客户端按太阳方位和高度实时投出楼的影子（src/shadows.ts）；树的影子按树冠另算，不进高度图
+{
+  const HW = EXTENT.x1 - EXTENT.x0, HH = EXTENT.y1 - EXTENT.y0;
+  const hp = new Pix(HW, HH);
+  for (const b of buildings) {
+    const hgt = heights(b);
+    for (let y = 0; y < b.h; y++)
+      for (let x = 0; x < b.w; x++) {
+        if (!b.part[y * b.w + x]) continue;
+        const mx = Math.floor((b.x + x) / PPM), my = Math.floor((b.y + y) / PPM);
+        if (mx < 0 || my < 0 || mx >= HW || my >= HH) continue;
+        const i = (my * HW + mx) * 4;
+        hp.data[i] = Math.max(hp.data[i], Math.min(255, Math.ceil(hgt[y * b.w + x] / PPM)));
+      }
+  }
+  for (let i = 3; i < hp.data.length; i += 4) hp.data[i] = 255;
+  hp.save(new URL('../assets/heights.png', import.meta.url));
 }
 
 // ---------- 碰撞 ----------

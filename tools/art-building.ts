@@ -10,7 +10,7 @@ import { PAL, type Color, type PalKey } from './palette.ts';
 import { Pix, loadPix, rng } from './pix.ts';
 import { BUILDING } from './tiles.ts';
 
-const { storey: STOREY, plinth: PLINTH, parapet: PARAPET, shadow: SHADOW } = BUILDING;
+const { storey: STOREY, plinth: PLINTH, parapet: PARAPET } = BUILDING;
 
 interface FacadeCtx {
   /** 立面上的 x（像素，相对建筑左缘） */
@@ -340,7 +340,7 @@ function renderBuilding(b: BuildingModel, view: View, light: boolean): Pix {
   const hf = (x: number, y: number) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : Hh.a[y * W + x]);
   const hr = (x: number, y: number) => Math.round(hf(x, y));
   const top = Math.ceil(hw.reduce((a, v) => Math.max(a, v), 0)) + b.extraTop;
-  const pix = new Pix(W + SHADOW, H + top);
+  const pix = new Pix(W, H + top);
   const { paint, finish } = buildingPainter(pix, light, b.id);
   const rand = rng(Math.abs(b.id) || 7);
   /** 视角下屋顶平面的像素 → 世界朝向下的像素（屋顶花样按世界方向排） */
@@ -360,12 +360,7 @@ function renderBuilding(b: BuildingModel, view: View, light: boolean): Pix {
   };
   const inset = insetMap(W, H, flatId, 255);
 
-  // 地面投影：光从左上来，影子落在右侧
-  const shade = new Uint8Array((W + SHADOW) * H);
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++)
-      if (part(x, y) && !part(x + 1, y)) for (let k = 1; k <= SHADOW; k++) if (!part(x + k, y)) shade[y * (W + SHADOW) + x + k] = 1;
-  if (!light) for (let y = 0; y < H; y++) for (let x = 0; x < W + SHADOW; x++) if (shade[y * (W + SHADOW) + x]) pix.px(x, top + y, 'shadow', 70);
+  // 地面投影不烘焙：游戏里按太阳位置实时投影（src/shadows.ts）
 
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {

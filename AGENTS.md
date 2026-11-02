@@ -27,7 +27,7 @@ art/      公开美术仓库 mituan-ai/pixel-neu-art 的 git 子模块：物件 
 art-inbox/ 美术草稿与第三方候选素材，审核通过的移到 art/；约束见 art-inbox/AGENTS.md，除该文件外不进仓库
 assets/   运行时资源（Vite publicDir），美术约束见 assets/AGENTS.md；ground/ 是 npm run map 烘焙的地面分块
 data/     原始资料：osm.json（OSM）、survey.json（从卫星图描的地面、树、楼基校正）；sat-*.png、check.png、parallax.png、ref/（照片和视频截图）是本地参考，不进仓库
-docs/     sources.md：资料来源与待核实；refs/：各区域参考资料的文字索引；codex/：给 Codex 的通用提示词和任务单
+docs/     sources.md：资料来源与待核实；roadmap.md：下一版设计方案；deploy.md：服务端环境变量与上线；refs/：各区域参考资料的文字索引；codex/：给 Codex 的通用提示词和任务单
 server/   Colyseus 服务端
 shared/   前后端和工具共用：world.ts、social.ts、state.ts、view.ts（四视角换算）
 src/      浏览器端
@@ -42,7 +42,7 @@ tools/    数据抓取与地图、美术生成器
 ```
 git submodule update --init   拉 art/ 子模块（新克隆时）
 npm run dev        前端（Vite，/colyseus 代理到 2567）
-npm run server     服务端（带 --dev：放行开发者模式的 Shift 5 倍速；线上用 npm start，不放行）
+npm run server     服务端（带 --dev：放行 Shift 5 倍速，验证码打印在日志里；线上用 npm start）
 npm test           测试
 npm run typecheck  类型检查
 npm run osm        重新抓 OSM 到 data/osm.json
@@ -51,6 +51,7 @@ npm run check      对照图 data/check.png（-- [来源] x0 y0 x1 y1 每米像�
 npm run parallax   两期卫星图视差测楼高和楼基，输出建议值和 data/parallax.png（-- x0 y0 x1 y1）
 npm run map        生成 assets/map.json、地面分块 assets/ground/ 和小地图 assets/minimap.png
 npm run art        生成美术，并输出 data/preview.png
+node tools/admin.ts  管理：举报、禁言、封号、删消息（用法见文件开头）
 ```
 
 改了地图或美术生成器：`npm run map && npm run art && npm test`，看 `data/preview.png`，再重启服务端（它启动时读 map.json）。
@@ -60,12 +61,20 @@ npm run art        生成美术，并输出 data/preview.png
 - Phaser 4、Colyseus 0.18、TypeScript 7、Vite 8、Vitest 5。
 - Node 22.18+ 直接跑 `.ts`（类型擦除）：不能用 enum、namespace、参数属性、装饰器。Schema 用 `schema()` + `t`。导入写 `.ts` 后缀，类型导入用 `import type`。
 - 服务端是位置的权威：沿移动路径校验速度和碰撞，不合理就发 `snap`。客户端只做预测。
+- 服务端同进程挂了 HTTP 接口（`/api/...`，经 `/colyseus/api/` 代理访问）。环境变量见 [docs/deploy.md](docs/deploy.md)。
+- 时间一律按北京时间的真实时刻：日月位置在 `shared/sky.ts`，天气由服务端从 Open-Meteo 取（`server/weather.ts`）。地面投影不烘焙，客户端按太阳位置实时画（`src/shadows.ts`、`assets/heights.png`）。
 - `assets/map.json` 是生成产物，改 `tools/` 再重新生成。
 
 ## 社交
 
-- 只有预设短语和表情，没有自由文本。`shared/social.ts` 里的短语、表情只能追加到末尾：序号就是网络协议。
-- 昵称经过 `cleanName`。不收集个人信息，不需要登录。
+- 没登录是访客：只收状态，不进 `players`，别人看不到，不能发言，不占 40 人名额（每房间另有 60 个旁观位）。
+- 登录用手机号短信验证码（`server/auth.ts`），新号码自动注册。短信服务商在 `server/sms.ts` 按 `SMS_PROVIDER` 切换，没配就不开放登录；开发模式（`--dev`）验证码打印在服务端日志里。
+- 手机号只存加盐哈希（盐在 `PHONE_SALT`），令牌和验证码只存哈希。数据都在 `node:sqlite` 的库里（`DB_FILE`），聊天记录保留 6 个月。
+- 文字聊天分附近（40 m）、广场（跨房间）、讨论室三种频道：每条最多 80 字、2 秒一条，注册不满 10 分钟只能在附近说话；敏感词表在服务端本地（`BADWORDS_FILE`），不进仓库。可以举报、拉黑；管理员用 `node tools/admin.ts` 禁言、封号、删消息。
+- 预设短语和表情保留。`shared/social.ts` 里的短语、表情、讨论室只能追加到末尾：序号就是网络协议。
+- 聊天内容一律按纯文本显示（`textContent`），不拼 HTML。昵称经过 `cleanName`，消息经过 `cleanText`。
+- 改了收集什么数据、存多久，要同步改 `src/legal.ts` 的《隐私政策》。
+- 社群入口（QQ 群、微信）在 `src/config.ts`，二维码放 `assets/community/`。
 - 单房间上限 40 人，满了自动开新房间。
 
 ## 署名与许可

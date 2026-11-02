@@ -13,3 +13,5 @@ data/*-sheet.png
 data/ref/
 art-inbox/*
 !art-inbox/AGENTS.md
+data/*.db*
+data/badwords.txt
