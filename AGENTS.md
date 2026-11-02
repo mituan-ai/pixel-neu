@@ -63,6 +63,7 @@ node tools/admin.ts  管理：举报、禁言、封号、删消息（用法见�
 - 服务端是位置的权威：沿移动路径校验速度和碰撞，不合理就发 `snap`。客户端只做预测。
 - 服务端同进程挂了 HTTP 接口（`/api/...`，经 `/colyseus/api/` 代理访问）。环境变量见 [docs/deploy.md](docs/deploy.md)。
 - 时间一律按北京时间的真实时刻：日月位置在 `shared/sky.ts`，天气由服务端从 Open-Meteo 取（`server/weather.ts`）。地面投影不烘焙，客户端按太阳位置实时画（`src/shadows.ts`、`assets/heights.png`）。
+- 动物和行驶的车在客户端按「北京时间日期 + 编号」生成（`src/ambient.ts`），不走网络；车道取自 OSM 校内机动车道（map.json 的 `lane`）。停着的车和单车是地图物件 `v:车型:车色号`，rot 是车头朝向。
 - `assets/map.json` 是生成产物，改 `tools/` 再重新生成。
 
 ## 社交

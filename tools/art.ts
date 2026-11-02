@@ -3,6 +3,7 @@
 // 某张图改成手绘后，把它从 HANDMADE 之外的生成列表里拿掉，避免被覆盖（规则见 assets/AGENTS.md）。
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { EMOTES } from '../shared/social.ts';
+import { vehicleKey } from '../shared/vehicles.ts';
 import { FACING, VIEWS, VIEW_NAME, type View } from '../shared/view.ts';
 import { GROUND_CHUNK, LAYER, METERS_PER_TILE, TILE, prop, type TiledMap } from '../shared/world.ts';
 import { drawAvatarSheet } from './art-avatar.ts';
@@ -271,84 +272,6 @@ function evCharger(v: View): PropArt {
   return { pix: p, ax: x0 + s / 2, ay: ground - s / 2 };
 }
 
-/** 小汽车的车漆：顶面、立面、暗部 */
-const CAR_PAINT: [PalKey, PalKey, PalKey][] = [
-  ['stone3', 'stone2', 'stone0'], // 白
-  ['grey3', 'grey2', 'grey0'], // 银
-  ['slate', 'glass0', 'ink'], // 黑
-  ['water1', 'water0', 'glass0'], // 蓝
-  ['flowerR', 'brick0', 'bronze0'], // 红
-];
-
-/**
- * 普通轿车：长 4.6 m、宽 1.8 m，下半截车身高 0.75 m、缩进的座舱再高 0.6 m。
- * head 是车头在屏幕上的朝向（0 上、1 右、2 下、3 左）；按 3/4 俯视画顶面和朝屏幕下方的立面
- */
-function car(paint: number, head: number): PropArt {
-  const [top, side, dark] = CAR_PAINT[paint];
-  const L = Math.round(4.6 * PPM), Wd = Math.round(1.8 * PPM), HB = 6, HC = 5, Z = HB + HC;
-  const along = head % 2 === 0; // 车身沿屏幕竖向
-  const sw = along ? Wd : L, sd = along ? L : Wd;
-  const p = new Pix(sw + 7, sd + Z + 4);
-  const x0 = 1, gy = Z + 1; // 地面上占地矩形的左上角是 (x0, gy)
-  // 盒子：屏幕坐标里占地 [xa, xb) × [ya, yb)，高 [za, zb)
-  const box = (xa: number, xb: number, ya: number, yb: number, za: number, zb: number, t: PalKey, f: PalKey) => {
-    p.rect(x0 + xa, gy + ya - zb, xb - xa, yb - ya, t);
-    p.rect(x0 + xa, gy + yb - zb, xb - xa, zb - za, f);
-  };
-  // 座舱沿车长方向的范围（从车头量起），挡风玻璃在前、后窗在后
-  const c0 = Math.round(L * 0.3), c1 = Math.round(L * 0.78);
-  // 影子
-  for (let y = gy + 2; y < gy + sd + 2; y++) for (let x = x0 + 2; x < x0 + sw + 3; x++) p.px(x, y, 'shadow', 60);
-  // 车轮
-  if (along) for (const yy of [Math.round(L * 0.2), Math.round(L * 0.8)]) p.rect(x0, gy + yy - 2, sw, 4, 'ink');
-  else for (const xx of [Math.round(L * 0.2), Math.round(L * 0.8)]) p.rect(x0 + xx - 2, gy + sd - 3, 4, 3, 'ink');
-  box(0, sw, 0, sd, 1, HB, top, side);
-  if (along) {
-    const [ya, yb] = head === 0 ? [c0, c1] : [L - c1, L - c0];
-    box(1, sw - 1, ya, yb, HB, Z, top, 'glass0');
-    // 顶面上看得到斜挡风玻璃和后窗
-    const front = head === 0 ? ya : yb - 4, rear = head === 0 ? yb - 3 : ya;
-    p.rect(x0 + 1, gy + front - Z, sw - 2, 4, 'glass1');
-    p.hline(x0 + 2, gy + front - Z + (head === 0 ? 1 : 2), sw - 6, 'glass2');
-    p.rect(x0 + 1, gy + rear - Z, sw - 2, 3, 'glass0');
-    if (head === 2) p.px(x0 + 2, gy + yb - Z + 1, 'glass2'), p.px(x0 + 3, gy + yb - Z + 2, 'glass2');
-    // 立面：车头（大灯、格栅）或车尾（尾灯、牌照）
-    const fy = gy + sd - HB;
-    if (head === 2) {
-      p.rect(x0 + 1, fy + 1, 2, 2, 'flowerW'), p.rect(x0 + sw - 3, fy + 1, 2, 2, 'flowerW');
-      p.rect(x0 + 4, fy + 2, sw - 8, 2, 'slate');
-    } else {
-      p.rect(x0 + 1, fy + 1, 2, 1, 'flowerR'), p.rect(x0 + sw - 3, fy + 1, 2, 1, 'flowerR');
-      p.rect(x0 + sw / 2 - 2, fy + 3, 4, 1, 'water2');
-    }
-    p.hline(x0, gy + sd - 2, sw, dark);
-  } else {
-    const [xa, xb] = head === 3 ? [c0, c1] : [L - c1, L - c0];
-    box(xa, xb, 1, sd - 1, HB, Z, top, 'glass0');
-    // 顶面的挡风玻璃和后窗
-    const front = head === 3 ? xa : xb - 4, rear = head === 3 ? xb - 3 : xa;
-    p.rect(x0 + front, gy + 1 - Z, 4, sd - 2, 'glass1');
-    p.vline(x0 + front + (head === 3 ? 1 : 2), gy + 2 - Z, sd - 6, 'glass2');
-    p.rect(x0 + rear, gy + 1 - Z, 3, sd - 2, 'glass0');
-    // 侧窗：B 柱分成前后两扇，前后斜边用车漆削角
-    const wy = gy + sd - 1 - Z;
-    p.vline(x0 + Math.round((xa + xb) / 2), wy, HC, top);
-    p.px(x0 + (head === 3 ? xa : xb - 1), wy, top), p.px(x0 + (head === 3 ? xb - 1 : xa), wy, top);
-    p.px(x0 + xa + 2, wy + 1, 'glass2');
-    // 车门缝、前后灯
-    const fy = gy + sd - HB;
-    p.vline(x0 + Math.round((xa + xb) / 2), fy, HB - 1, dark);
-    p.hline(x0, gy + sd - 2, sw, dark);
-    p.rect(x0 + (head === 3 ? 0 : sw - 1), fy + 1, 1, 2, 'flowerW');
-    p.rect(x0 + (head === 3 ? sw - 1 : 0), fy + 1, 1, 2, 'flowerR');
-    // 车轮压在立面下沿
-    for (const xx of [Math.round(L * 0.2), Math.round(L * 0.8)]) p.rect(x0 + xx - 2, gy + sd - 3, 4, 3, 'ink'), p.px(x0 + xx - 1, gy + sd - 2, 'grey1');
-  }
-  p.outline('ink');
-  return { pix: p, ax: x0 + sw / 2, ay: gy + sd / 2 };
-}
-
 /**
  * 足球门：宽 7.32 m、高 2.44 m（规则尺寸），网兜进深约 2 m。世界朝向下（rot 0）门口朝南、网兜在北。
  * 白色门框，网画成稀疏的浅色点；门口朝屏幕上方时网兜在前，先画门框再画网
@@ -561,8 +484,6 @@ for (const v of VIEWS) {
   PROPS[k('movement-129')] = movement129(v);
   PROPS[k('park-sculpture')] = sculpture();
   PROPS[k('energy-sphere')] = sculpture();
-  // 车头朝北的车在各视角下屏幕上的车头朝向：上北朝上，上东朝左，上南朝下，上西朝右
-  CAR_PAINT.forEach((_, i) => (PROPS[`car-${i}@${VIEW_NAME[v]}`] = car(i, [0, 3, 2, 1][v])));
 }
 // art/props/ 里审核通过的手绘物件：同名 json 给锚点（底边中点）和屏幕上的占地，这里换成占地中心
 for (const f of readdirSync(new URL('../art/props/', import.meta.url)).filter((f) => f.endsWith('.png'))) {
@@ -593,8 +514,14 @@ TREES.forEach((name, i) => {
 }
 
 // ---------- 生态、界面和特效（车辆、动物、图标、灯光雨雪），目录在 shared/vehicles.ts、fauna.ts、icons.ts、fx.ts ----------
+const VEHICLE_ART = { ...drawVehicles(), ...drawBikes() };
+/** 地图里「v:车型:车色号」的物件：rot 是车头朝向，北视角下朝北的车用「上」那张图 */
+const vehicleArt = (name: string, rot: number): PropArt | undefined => {
+  const [, id, paint] = name.split(':');
+  return VEHICLE_ART[vehicleKey(id, Number(paint), [3, 2, 0, 1][rot % 4], 0)];
+};
 for (const [name, sprites] of [
-  ['vehicles', { ...drawVehicles(), ...drawBikes() }],
+  ['vehicles', VEHICLE_ART],
   ['fauna', drawFauna()],
   ['ui', drawUi()],
   ['fx', drawFx()],
@@ -709,7 +636,7 @@ const buildingArt = new Map<string, Pix>();
       draws.push({ y: o.y + o.height, fn: () => pv.blit(pix, o.x, o.y - prop(o, 'top', 0)) });
     } else if (o.type === 'prop') {
       const name = prop(o, 'sprite', '');
-      const a = PROPS[name] ?? PROPS[`${name}@${VIEW_NAME[(4 - prop(o, 'rot', 0)) % 4]}`];
+      const a = name.startsWith('v:') ? vehicleArt(name, prop(o, 'rot', 0)) : PROPS[name] ?? PROPS[`${name}@${VIEW_NAME[(4 - prop(o, 'rot', 0)) % 4]}`];
       if (a) draws.push({ y: o.y, fn: () => pv.blit(a.pix, o.x - a.ax, o.y - a.ay) });
     }
   }
@@ -737,8 +664,9 @@ const buildingArt = new Map<string, Pix>();
     if (o.type === 'building') {
       art = { pix: buildingArt.get(name)!, ax: 0, ay: prop(o, 'top', 0) };
     } else if (o.type === 'prop') {
-      art = PROPS[name] ?? PROPS[`${name}@${VIEW_NAME[(4 - prop(o, 'rot', 0)) % 4]}`];
-      if (!art) continue;
+      const a = name.startsWith('v:') ? vehicleArt(name, prop(o, 'rot', 0)) : PROPS[name] ?? PROPS[`${name}@${VIEW_NAME[(4 - prop(o, 'rot', 0)) % 4]}`];
+      if (!a) continue;
+      art = a;
     } else continue;
     const ox = o.x - art.ax - x0, oy = o.y - art.ay - y0;
     if (ox >= night.w || oy >= night.h || ox + art.pix.w <= 0 || oy + art.pix.h <= 0) continue;

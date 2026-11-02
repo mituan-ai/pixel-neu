@@ -94,6 +94,8 @@ export class Sky {
     this.scene.setSnowCover(!this.weather.stale && this.weather.snow > 0);
     const sun = day ? FIXED_SUN : sunPosition(now);
     this.scene.setSun(sun, sun.alt > 1 ? shadowStrength(code) * (1 - night) : 0);
+    const wet = precipLevel(code);
+    this.scene.setWet(!this.weather.stale && wet.rain + wet.snow > 0);
     const p = this.settings.weatherFx ? precipLevel(code) : { rain: 0, snow: 0 };
     this.particles(p.rain, p.snow);
   }

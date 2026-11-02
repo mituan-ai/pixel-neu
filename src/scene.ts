@@ -6,11 +6,13 @@
 import Phaser from 'phaser';
 import { AVATAR, DIR, PHRASES, cleanLook, type Look } from '../shared/social.ts';
 import type { Player } from '../shared/state.ts';
+import { vehicleKey } from '../shared/vehicles.ts';
 import { VIEW_NAME, dirFromView, dirToView, fromView, toView, viewSize, type View } from '../shared/view.ts';
 import { DEV_BOOST, GROUND_CHUNK, LAYER, TILE, WALK_SPEED, Walkable, prop, type TiledMap, type TiledObject } from '../shared/world.ts';
 import { PAL } from '../tools/palette.ts';
 import type { Body } from '../shared/sky.ts';
 import { Avatar, GHOST_DEPTH, display, mulColor } from './avatar.ts';
+import { Ambient } from './ambient.ts';
 import { Shadows, type Tree } from './shadows.ts';
 import type { Hello, Net, NetHandlers } from './net.ts';
 
@@ -132,6 +134,7 @@ export class CampusScene extends Phaser.Scene {
   private snowy = false;
   private lamps: Phaser.GameObjects.Image[] = [];
   private shadows!: Shadows;
+  private ambient!: Ambient;
   /** 跟着镜头走的覆盖物（雨雪粒子） */
   private overlays: Phaser.GameObjects.GameObject[] = [];
   private readonly others = new Map<string, Actor>();
@@ -170,8 +173,10 @@ export class CampusScene extends Phaser.Scene {
     this.load.spritesheet('emotes', 'emotes.png', { frameWidth: 18, frameHeight: 18 });
     this.load.image('props', 'props.png');
     this.load.json('props-meta', 'props.json');
-    this.load.image('fx', 'fx.png');
-    this.load.json('fx-meta', 'fx.json');
+    for (const a of ['fx', 'fauna', 'vehicles']) {
+      this.load.image(a, `${a}.png`);
+      this.load.json(`${a}-meta`, `${a}.json`);
+    }
   }
 
   create(): void {
@@ -196,13 +201,28 @@ export class CampusScene extends Phaser.Scene {
     const meta = this.cache.json.get('props-meta') as Record<string, { x: number; y: number; w: number; h: number }>;
     const tex = this.textures.get('props');
     for (const [name, m] of Object.entries(meta)) tex.add(name, 0, m.x, m.y, m.w, m.h);
-    const fx = this.textures.get('fx');
-    for (const [name, m] of Object.entries(this.cache.json.get('fx-meta') as Record<string, { x: number; y: number; w: number; h: number }>))
-      fx.add(name, 0, m.x, m.y, m.w, m.h);
+    // 图集的锚点（ax、ay）是脚底，换算成 Phaser 帧的枢轴
+    for (const a of ['fx', 'fauna', 'vehicles']) {
+      const t = this.textures.get(a);
+      for (const [name, m] of Object.entries(this.cache.json.get(`${a}-meta`) as Record<string, { x: number; y: number; w: number; h: number; ax?: number; ay?: number }>)) {
+        const f = t.add(name, 0, m.x, m.y, m.w, m.h);
+        if (a === 'fx' || !f || m.ax === undefined) continue;
+        f.customPivot = true;
+        f.pivotX = m.ax / m.w;
+        f.pivotY = (m.ay ?? m.h) / m.h;
+      }
+    }
     this.shadows = new Shadows(this, this.worldLayer);
     this.shadows.setTrees(this.trees());
     this.shadows.setView(this.view, (x, y) => this.toView(x, y));
     this.buildScenery();
+    this.ambient = new Ambient(this, this.worldLayer, {
+      walk: this.walk,
+      trees: this.trees().map((t) => ({ x: t.x * (TILE / 2), y: t.y * (TILE / 2), h: t.h })),
+      doors: this.objects('door').map((o) => ({ x: o.x, y: o.y, facing: 'NESW'.indexOf(prop(o, 'facing', 'S')) })),
+      lanes: this.objects('lane').map((o) => (o.polyline ?? []).map((q) => ({ x: o.x + q.x, y: o.y + q.y }))),
+      toView: (x, y) => this.toView(x, y),
+    });
     this.pois = this.objects('poi').map((o) => ({
       name: o.name,
       text: prop(o, 'text', ''),
@@ -411,6 +431,7 @@ export class CampusScene extends Phaser.Scene {
     this.view = ((this.view + step + 4) % 4) as View;
     this.buildScenery();
     this.shadows.setView(this.view, (x, y) => this.toView(x, y));
+    this.ambient.setView(this.view);
     this.cam = this.toView(center.x, center.y);
     for (const a of this.actors()) a.av.redraw();
     this.applyZoom();
@@ -438,6 +459,7 @@ export class CampusScene extends Phaser.Scene {
     this.cull();
     this.updateGround();
     this.updateShadows();
+    this.updateAmbient(dt);
     this.placeDest();
     this.updateOverlays();
     this.checkPoi();
@@ -667,10 +689,18 @@ export class CampusScene extends Phaser.Scene {
     const meta = this.cache.json.get('props-meta') as Record<string, { w: number; h: number; ax: number; ay: number }>;
     for (const o of this.objects('prop')) {
       const name = prop(o, 'sprite', '');
+      const p = this.toView(o.x, o.y);
+      if (name.startsWith('v:')) {
+        // 车型目录里的车和单车：rot 是车头的世界朝向（0 北，顺时针），换成当前视角下的屏幕朝向
+        const [, id, paint] = name.split(':');
+        const dir = dirToView(this.view, [DIR.up, DIR.right, DIR.down, DIR.left][prop(o, 'rot', 0) % 4]);
+        const img = this.add.image(p.x, p.y, 'vehicles', vehicleKey(id, Number(paint), dir, 0)).setDepth(p.y).setTint(this.shade);
+        this.keep(img, img.getBounds());
+        continue;
+      }
       const frame = meta[name] ? name : `${name}@${VIEW_NAME[(this.view - prop(o, 'rot', 0) + 8) % 4]}`;
       const m = meta[frame];
       if (!m) continue;
-      const p = this.toView(o.x, o.y);
       // 平铺在地上的（台阶）画在地面之上、一切站立物之下
       const img = this.add.image(p.x, p.y, 'props', frame).setOrigin(m.ax / m.w, m.ay / m.h).setDepth(prop(o, 'flat', false) ? -5 : p.y).setTint(this.shade);
       this.keep(img, img.getBounds());
@@ -755,12 +785,14 @@ export class CampusScene extends Phaser.Scene {
     for (const b of this.blds) for (const img of b.imgs) img.setTint(c);
     for (const s of this.culled) if (s.o instanceof Phaser.GameObjects.Image && !this.lamps.includes(s.o)) s.o.setTint(c);
     for (const a of this.actors()) a.av.setShade(c);
+    this.ambient.setShade(c);
     this.dest.setTint(mulColor(0xffffff, c));
   }
 
   setLights(on: boolean): void {
     if (on === this.lightsOn) return;
     this.lightsOn = on;
+    this.ambient.setNight(on);
     for (const l of this.lamps) l.setVisible(on);
     for (const b of this.blds) {
       if (on) this.lightBuilding(b);
@@ -793,6 +825,18 @@ export class CampusScene extends Phaser.Scene {
     tex.context.putImageData(d, 0, 0);
     tex.refresh();
     return key;
+  }
+
+  /** 下雨下雪：猫躲回楼门口 */
+  setWet(on: boolean): void {
+    this.ambient.setWet(on);
+  }
+
+  private updateAmbient(dt: number): void {
+    const v = this.cameras.main.worldView;
+    const a = this.fromView(v.x, v.y), b = this.fromView(v.right, v.bottom);
+    const people = this.actors().map((x) => ({ x: x.av.x, y: x.av.y, moving: x.av.moving, self: x === this.me }));
+    this.ambient.update(dt, Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y), people);
   }
 
   setSun(sun: Body, strength: number): void {

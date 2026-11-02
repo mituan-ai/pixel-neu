@@ -2,7 +2,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { NAME_MAX, cleanLook, cleanName } from '../shared/social.ts';
-import { LAYER, TILE, Walkable, type TiledMap, type TiledObject } from '../shared/world.ts';
+import { vehicleKey } from '../shared/vehicles.ts';
+import { LAYER, TILE, Walkable, prop, type TiledMap, type TiledObject } from '../shared/world.ts';
 
 const map = JSON.parse(readFileSync(new URL('../assets/map.json', import.meta.url), 'utf8')) as TiledMap;
 const walk = new Walkable(map);
@@ -56,6 +57,24 @@ describe('地图', () => {
     // 信息学馆是朝南开口的 U 形，最北一排是主楼
     const info = ofType('building').find((b) => b.name === '信息学馆')!;
     expect(walk.footBlocked(info.x + info.width / 2, info.y + 2 * TILE)).toBe(true);
+  });
+});
+
+describe('生态', () => {
+  it('停着的车和单车都能在车辆图集里找到四个朝向的图', () => {
+    const atlas = JSON.parse(readFileSync(new URL('../assets/vehicles.json', import.meta.url), 'utf8')) as Record<string, unknown>;
+    const parked = ofType('prop').filter((o) => String(prop(o, 'sprite', '')).startsWith('v:'));
+    expect(parked.length).toBeGreaterThan(100);
+    for (const o of parked) {
+      const [, id, paint] = String(prop(o, 'sprite', '')).split(':');
+      for (let d = 0; d < 4; d++) expect(atlas[vehicleKey(id, Number(paint), d, 0)], `${id}-${paint}`).toBeDefined();
+    }
+  });
+
+  it('车道是校内能走的柏油路', () => {
+    const lanes = ofType('lane');
+    expect(lanes.length).toBeGreaterThan(5);
+    for (const o of lanes) for (const q of o.polyline ?? []) expect(walk.tileBlocked(Math.floor((o.x + q.x) / (TILE / 2)), Math.floor((o.y + q.y) / (TILE / 2)))).toBe(false);
   });
 });
 

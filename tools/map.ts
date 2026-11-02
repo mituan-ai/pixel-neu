@@ -6,13 +6,14 @@
 // 楼的占地、纪念物和北门的位置来自 OSM（S1），楼基校正见 buildings.ts。只有林地里的树是按冠幅铺满的（DESIGN），因为单棵树的位置看不清。
 import { readFileSync, writeFileSync } from 'node:fs';
 import { CELL, LAYER, METERS_PER_TILE as M, TILE, type TiledLayer, type TiledObject, type TiledProperty } from '../shared/world.ts';
+import { VEHICLES } from '../shared/vehicles.ts';
 import { toView, viewSize, VIEWS, VIEW_NAME } from '../shared/view.ts';
 import { MAT, WALKABLE } from './art-ground.ts';
 import { heights, loadBuildings, type BuildingModel, type OsmEl } from './buildings.ts';
 import { EXTENT, MAP_W as W, MAP_H as H, toWorld, type P } from './geo.ts';
 import { Ground, PH, PW } from './ground.ts';
 import { Pix } from './pix.ts';
-import { PPM } from './shape.ts';
+import { PPM, inPoly } from './shape.ts';
 import { loadSurvey } from './survey.ts';
 import { TREES } from './tiles.ts';
 
@@ -220,15 +221,27 @@ const reserved: P[] = [];
 }
 const nearAxis = (p: P) => reserved.some((q) => Math.abs(q[0] - p[0]) < 5 && Math.abs(q[1] - p[1]) < 5);
 
+/**
+ * 停着的车从车型目录（shared/vehicles.ts）里按哈希挑：新能源车约占三成，偶尔是快递三轮车。
+ * 物件名写成「v:车型:车色号」，客户端和预览图从 vehicles 图集取图，rot 是车头朝向（0 北，顺时针）
+ */
+const FUEL = VEHICLES.filter((v) => v.group === 'fuel'), NEV = VEHICLES.filter((v) => v.group === 'nev');
+const NEV_SHARE = 30;
+function parkedCar(h: number): string {
+  const k = h % 100;
+  const list = k < NEV_SHARE ? NEV : FUEL;
+  const v = k >= 97 ? VEHICLES.find((x) => x.id === 'express-trike')! : list[(h >>> 7) % list.length];
+  return `v:${v.id}:${(h >>> 12) % v.paints.length}`;
+}
+
 // 停车场里的车（据卫星图 S7：信息学馆院内和图书馆南面的停车场都停着车，车身南北向）。
 // 车位深 6 m（3 个 2 m 格），约一半车位有车，按格子哈希挑，每次生成一样
 {
-  const CARS = ['car-0', 'car-1', 'car-2', 'car-3', 'car-4'];
   const tileM = (c: number, r: number): P => [EXTENT.x0 + (c + 0.5) * M, EXTENT.y0 + (r + 0.5) * M];
   for (let r = 0; r < H; r += 3)
     for (let c = 0; c < W; c++) {
       if (hash(c, r) % 100 >= 45 || ![0, 1, 2].every((k) => ground.at(tileM(c, r + k)) === 'parking') || isSolid(tileM(c, r))) continue;
-      placeProp(CARS[hash(r, c) % CARS.length], tileM(c, r + 1), 1.8, 4.5, hash(c + 7, r) % 2 ? 0 : 2);
+      placeProp(parkedCar(hash(r, c)), tileM(c, r + 1), 1.8, 4.5, hash(c + 7, r) % 2 ? 0 : 2);
     }
   // 垂直车位排（survey.json 的 stalls，据卫星图 S7）：每个车位一张地面标线，约八成有车，车头大多朝底线
   const NOSE = { N: 0, E: 1, S: 2, W: 3 } as const;
@@ -240,7 +253,7 @@ const nearAxis = (p: P) => reserved.some((q) => Math.abs(q[0] - p[0]) < 5 && Mat
       point('prop', 'stall', centre, { sprite: 'stall', flat: true, ...(rot ? { rot } : {}) });
       const h = hash(Math.round(centre[0] * 10), Math.round(centre[1] * 10));
       if (h % 100 >= 80) continue;
-      placeProp(CARS[h % CARS.length], centre, 1.8, 4.5, h % 10 < 3 ? (NOSE[back] + 2) % 4 : NOSE[back]);
+      placeProp(parkedCar(h), centre, 1.8, 4.5, h % 10 < 3 ? (NOSE[back] + 2) % 4 : NOSE[back]);
     }
   // 信息学馆院内东排背后林地边上的 4 个电动车充电桩（维护者实地描述），每 5 m 一个
   const Y0 = 261;
@@ -363,6 +376,63 @@ for (const b of buildings) {
   }
   for (let i = 3; i < hp.data.length; i += 4) hp.data[i] = 255;
   hp.save(new URL('../assets/heights.png', import.meta.url));
+}
+
+// ---------- 单车 ----------
+// 单车停放排（survey.json 的 bikeRacks）：每 0.8 m 一辆，车身垂直于停放排。描好以前，先在主楼门旁边放一小排（DESIGN），不挡路
+{
+  const BIKES = VEHICLES.filter((v) => v.group === 'bike' || v.group === 'share' || v.group === 'moto');
+  const bike = (p: P, rot: number) => {
+    if (!drawn(p) || isSolid(p)) return;
+    const h = hash(Math.round(p[0] * 10), Math.round(p[1] * 10));
+    const v = BIKES[h % BIKES.length];
+    point('prop', '', p, { sprite: `v:${v.id}:${(h >>> 9) % v.paints.length}`, rot });
+  };
+  const DIRS: P[] = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+  for (const r of survey.bikeRacks) {
+    const n = Math.max(1, Math.round(dist(r.from, r.to) / 0.8));
+    // 车身和停放排垂直：停放排东西向时车头朝北，南北向时车头朝东
+    const rot = Math.abs(r.to[0] - r.from[0]) > Math.abs(r.to[1] - r.from[1]) ? 0 : 1;
+    for (let k = 0; k <= n; k++) bike(lerp(r.from, r.to, k / n), rot);
+  }
+  if (!survey.bikeRacks.length)
+    for (const d of survey.doors) {
+      if (!d.main) continue;
+      const f = 'NESW'.indexOf(d.facing), out = DIRS[f], side = DIRS[(f + 1) % 4];
+      const n = 3 + (hash(Math.round(d.at[0]), Math.round(d.at[1])) % 4);
+      for (let k = 0; k < n; k++) bike([d.at[0] + out[0] * 2 + side[0] * (3 + k * 0.8), d.at[1] + out[1] * 2 + side[1] * (3 + k * 0.8)], (f + 2) % 4);
+    }
+}
+
+// ---------- 车道 ----------
+// 行驶的车沿 OSM（S1）里校内的机动车道走：沿中心线每米取样，落在柏油路上、没被挡住的连续一段超过 30 m 才要，每 4 m 留一个点
+{
+  const ROADS = new Set(['residential', 'unclassified', 'tertiary', 'tertiary_link', 'service']);
+  for (const e of osm.elements) {
+    if (e.type !== 'way' || !ROADS.has(e.tags.highway ?? '')) continue;
+    const g = geom(e);
+    let run: P[] = [];
+    const flush = () => {
+      if (run.length > 30) {
+        const pts = run.filter((_, i) => i % 4 === 0 || i === run.length - 1);
+        const [x0, y0] = wpx(pts[0]);
+        objects.push({
+          id: nextId++, name: '', type: 'lane', x: Math.round(x0), y: Math.round(y0), width: 0, height: 0,
+          polyline: pts.map((q) => ({ x: Math.round(wpx(q)[0] - x0), y: Math.round(wpx(q)[1] - y0) })),
+        });
+      }
+      run = [];
+    };
+    for (let i = 1; i < g.length; i++) {
+      const n = Math.max(1, Math.round(dist(g[i - 1], g[i])));
+      for (let k = i === 1 ? 0 : 1; k <= n; k++) {
+        const q = lerp(g[i - 1], g[i], k / n);
+        if (inPoly(q, campus) && ground.at(q) === 'asphalt' && !isSolid(q)) run.push(q);
+        else flush();
+      }
+    }
+    flush();
+  }
 }
 
 // ---------- 碰撞 ----------
