@@ -1111,6 +1111,7 @@
     {"at":[-481.3,499.5],"width":12}
   ],
   "doors": [
+    {"at":[280.5,273],"facing":"E","main":true,"canopy":"slab"},
     {"at":[262.5,188],"facing":"S","main":true,"canopy":"none"},
     {"at":[-51.5,319],"facing":"S","main":true,"canopy":"none"},
     {"at":[294.25,325.4375],"facing":"W","main":true,"canopy":"none","width":4},
