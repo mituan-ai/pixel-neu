@@ -66,7 +66,7 @@
     "514992481": {"storeys":4},
     "514992483": {"storeys":5,"name":"化学馆","src":"S1,S42"},
     "514992485": {"storeys":4,"name":"机电学馆","src":"S1,S31"},
-    "514992489": {"storeys":4,"name":"何世礼教学馆","src":"S1,S30,S43"},
+    "514992489": {"storeys":4,"name":"何世礼教学馆","src":"S1,S30,S43,R-south-01","look":"tile","tweak":{"wall":["plain0","plain1","plain2"],"cornice":"tile2","penthouse":false,"roofGrid":0}},
     "514993668": {"shift":[2,6],"storeys":4,"name":"理学院","src":"S1"},
     "514993670": {"shift":[5,0],"storeys":4,"name":"建筑学馆","src":"S1,S31"},
     "514995512": {"storeys":4},
