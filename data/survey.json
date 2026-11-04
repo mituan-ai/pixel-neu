@@ -57,7 +57,7 @@
     "514987126": {"storeys":4,"shift":[1.5,0],"name":"五舍","src":"S30,S32"},
     "514987127": {"storeys":4,"shift":[5,0],"name":"东大餐饮中心","src":"S1,S30,S40"},
     "514987128": {"storeys":5,"name":"四舍","src":"S1,S30,S32"},
-    "514987130": {"storeys":4,"name":"二舍","src":"S1,S30,S32"},
+    "514987130": {"storeys":4,"name":"二舍","src":"S1,S30,S32,R-bld-07,R-far-south-01","look":"tile","tweak":{"wall":["plain0","plain1","plain2"],"frame":null}},
     "514987131": {"storeys":4,"name":"一舍","src":"S1,S28,S32"},
     "514987133": {"drop":true},
     "514992474": {"drop":true},
