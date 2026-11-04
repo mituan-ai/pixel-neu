@@ -68,7 +68,10 @@ if (cmd === 'start') {
   const add = LOCAL.filter((f) => !have.split('\n').includes(`/${f}`)).map((f) => `/${f}\n`).join('');
   if (add) writeFileSync(exclude, have + (have && !have.endsWith('\n') ? '\n' : '') + add);
   const log = openSync(join(HOME, `${t}.log`), 'w');
-  const child = spawn('codex', ['exec', '-C', wt, '-s', 'workspace-write', '-c', 'sandbox_workspace_write.network_access=true', '-o', join(HOME, `${t}.md`), prompt(path)], {
+  // 沙箱默认只能写 worktree：提交要写主仓库的 .git，测试要写 node_modules 里的缓存，参考照片放主仓库的 data/ref
+  mkdirSync(join(ROOT, 'data/ref'), { recursive: true });
+  const writable = [join(ROOT, git(ROOT, 'rev-parse', '--git-common-dir')), join(ROOT, 'node_modules'), join(ROOT, 'data/ref')].flatMap((d) => ['--add-dir', d]);
+  const child = spawn('codex', ['exec', '-C', wt, '-s', 'workspace-write', '-c', 'sandbox_workspace_write.network_access=true', ...writable, '-o', join(HOME, `${t}.md`), prompt(path)], {
     detached: true,
     stdio: ['ignore', log, log],
   });
