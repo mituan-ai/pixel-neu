@@ -18,6 +18,7 @@ export interface OsmEl {
 /** 楼的一个高度分区：墙高、屋顶（像素） */
 export interface PartModel {
   wall: number;
+  lift: number;
   roof: NonNullable<Part['roof']>;
   rise: number;
   /** 看台朝向的点（世界像素） */
@@ -58,9 +59,10 @@ const NAMED: Record<number, { name: string; style: BuildingModel['style'] }> = {
 
 export const levelPx = (storeys: number) => storeys * BUILDING.storey + BUILDING.plinth + BUILDING.parapet;
 
-function partOf(p: { storeys?: number; height?: number; roof?: Part['roof']; rise?: number; toward?: P; look?: string }, storeys: number): PartModel {
+function partOf(p: { storeys?: number; height?: number; lift?: number; roof?: Part['roof']; rise?: number; toward?: P; look?: string }, storeys: number): PartModel {
   return {
     look: p.look,
+    lift: Math.round((p.lift ?? 0) * PPM),
     wall: p.height !== undefined ? Math.round(p.height * PPM) : levelPx(p.storeys ?? storeys),
     roof: p.roof ?? 'flat',
     rise: Math.round((p.rise ?? 0) * PPM),
@@ -179,4 +181,11 @@ export function heights(b: BuildingModel): Float32Array {
     idx.forEach((i, k2) => (hgt[i] = Math.round((p.wall * (Math.min(rows - 1, Math.floor((d[k2] - d0) / (0.8 * PPM))) + 1)) / rows)));
   });
   return hgt;
+}
+
+/** 每个像素的体积底高（像素） */
+export function lifts(b: BuildingModel): Float32Array {
+  const low = new Float32Array(b.w * b.h);
+  for (let i = 0; i < b.part.length; i++) if (b.part[i]) low[i] = b.parts[b.part[i] - 1].lift;
+  return low;
 }

@@ -41,6 +41,8 @@ export interface Shape {
 export interface Part extends Shape {
   storeys?: number;
   height?: number;
+  /** 体积底离地高度（米），不写为 0 */
+  lift?: number;
   roof?: 'flat' | 'dome' | 'stands' | 'gable' | 'hip';
   rise?: number;
   toward?: P;
@@ -111,14 +113,15 @@ export interface Survey {
    *   生成时把轮廓和自己朝 -lean 平移的那份取交集。这样会把与 lean 垂直的翼都削薄 |lean|，
    *   轮廓只是楼顶时千万不要用，用 shift
    * - storeys：地上层数，不写按 OSM 的 building:levels，再没有按 4 层
+   * - lift：第 1 分区的底离地高度（米），不写为 0
    * - height、roof、rise、toward：整栋楼的高度和屋顶（见 Part）
    * - parts：高度分区（楼基坐标系，见 Part）
    * - drop：OSM 轮廓和实际的楼对不上（形状错、楼已拆），不画它，改在 newBuildings 里重描
    * - name、src：楼名和它的来源编号（docs/sources.md 的 S 号，逗号分隔）；不写就没有名字，OSM 的 name 不自动用
    */
-  buildings: Record<string, Appearance & { shift?: P; lean?: P; storeys?: number; height?: number; roof?: Part['roof']; rise?: number; toward?: P; parts?: Part[]; drop?: boolean; name?: string; src?: string }>;
-  /** OSM 里没有的楼：形状直接描墙脚（楼基）；height、roof、rise、toward、parts、name、src 和外观同上 */
-  newBuildings: (Shape & Appearance & { storeys: number; height?: number; roof?: Part['roof']; rise?: number; toward?: P; parts?: Part[]; name?: string; src?: string })[];
+  buildings: Record<string, Appearance & { shift?: P; lean?: P; storeys?: number; height?: number; lift?: number; roof?: Part['roof']; rise?: number; toward?: P; parts?: Part[]; drop?: boolean; name?: string; src?: string }>;
+  /** OSM 里没有的楼：形状直接描墙脚（楼基）；lift 是第 1 分区的底离地高度（米），不写为 0；其余字段同上 */
+  newBuildings: (Shape & Appearance & { storeys: number; height?: number; lift?: number; roof?: Part['roof']; rise?: number; toward?: P; parts?: Part[]; name?: string; src?: string })[];
   /**
    * 视差标定（npm run parallax 用）：box [x0, y0, x1, y1] 范围里的楼，以 ref 这栋 OSM 楼为参考算每期卫星图的斜拍偏移。
    * ref 的 shift 和 storeys 必须是对着墙脚、立面照片量准的。卫星图是几次航拍拼起来的，换一片偏移方向和大小都会变，所以按范围分别标定。

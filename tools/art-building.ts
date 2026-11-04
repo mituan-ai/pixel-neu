@@ -6,7 +6,7 @@
 // 有照片依据的立面放在 art/facades/<style>-<朝向>.png（正立面图，1 m = 8 px），按图取色；其余朝向用程序立面。
 import { existsSync } from 'node:fs';
 import { FACING, fromView, toView, viewSize, type View } from '../shared/view.ts';
-import { heights, type BuildingModel, type PartModel } from './buildings.ts';
+import { heights, lifts, type BuildingModel, type PartModel } from './buildings.ts';
 import { EXTENT } from './geo.ts';
 import { doorPixel, featurePixel, lookFacade, lookOf, RAMPS, type Look } from './facades.ts';
 import { PPM } from './shape.ts';
@@ -339,10 +339,13 @@ function renderBuilding(b: BuildingModel, view: View, light: boolean): Pix {
   const hw = heights(b);
   const P = rotateArr(view, b.part, b.w, b.h, (n) => new Uint8Array(n));
   const Hh = rotateArr(view, hw, b.w, b.h, (n) => new Float32Array(n));
+  const Ll = rotateArr(view, lifts(b), b.w, b.h, (n) => new Float32Array(n));
   const W = P.w, H = P.h;
   const part = (x: number, y: number) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : P.a[y * W + x]);
   const hf = (x: number, y: number) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : Hh.a[y * W + x]);
+  const lo = (x: number, y: number) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : Ll.a[y * W + x]);
   const hr = (x: number, y: number) => Math.round(hf(x, y));
+  const frontAt = (x: number, y: number) => lo(x, y) > 0 ? 0 : hr(x, y);
   const top = Math.ceil(hw.reduce((a, v) => Math.max(a, v), 0)) + b.extraTop;
   const pix = new Pix(W, H + top);
   const { paint, finish } = buildingPainter(pix, light, b.id);
@@ -373,7 +376,7 @@ function renderBuilding(b: BuildingModel, view: View, light: boolean): Pix {
   for (let y = 0; y < H; y++) {
     let x = 0;
     while (x < W) {
-      const isFace = (xx: number) => part(xx, y) > 0 && hr(xx, y + 1) < hr(xx, y) && hr(xx, y + 1) === hr(x, y + 1) && hr(xx, y) === hr(x, y);
+      const isFace = (xx: number) => part(xx, y) > 0 && frontAt(xx, y + 1) < hr(xx, y) && frontAt(xx, y + 1) === frontAt(x, y + 1) && hr(xx, y) === hr(x, y);
       if (!isFace(x)) {
         x++;
         continue;
@@ -416,14 +419,15 @@ function renderBuilding(b: BuildingModel, view: View, light: boolean): Pix {
       }
       paint(x, roofY, col);
       // 立面：前面那个像素更矮时，画出两者高度差那一段
-      const front = hr(x, y + 1);
+      const front = frontAt(x, y + 1);
       if (front >= hh) continue;
       // 墙面朝向：前沿往右下斜的一段朝左下、受光，往右上斜的一段背光
       const leftOpen = (yg: number) => hr(x - 1, y) <= yg && hr(x - 1, y + 1) <= yg;
       const rightOpen = (yg: number) => hr(x + 1, y) <= yg;
       const [wx, wy] = toMeters(x, y);
       const run0 = runs[(y * W + x) * 2], run1 = runs[(y * W + x) * 2 + 1];
-      for (let yg = front; yg < hh; yg++) {
+      if (lo(x, y) > 0 && lo(x, y) - 1 >= front) paint(x, top + y - lo(x, y) + 1, 'ink');
+      for (let yg = Math.max(front, lo(x, y)); yg < hh; yg++) {
         let c: FacadePixel;
         if (yg >= pm.wall) c = surface(pm.roof, hf, x, y, Math.floor(wp.x), Math.floor(wp.y), look);
         else if (pm.roof === 'stands') c = yg % 6 === 0 ? 'stone1' : 'stone2';

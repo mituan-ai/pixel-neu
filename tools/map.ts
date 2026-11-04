@@ -10,7 +10,7 @@ import { CELL, LAYER, METERS_PER_TILE as M, TILE, type TiledLayer, type TiledObj
 import { VEHICLES } from '../shared/vehicles.ts';
 import { toView, viewSize, VIEWS, VIEW_NAME } from '../shared/view.ts';
 import { MAT, WALKABLE } from './art-ground.ts';
-import { heights, loadBuildings, type BuildingModel, type OsmEl } from './buildings.ts';
+import { heights, lifts, loadBuildings, type BuildingModel, type OsmEl } from './buildings.ts';
 import { EXTENT, MAP_W as W, MAP_H as H, toWorld, type P } from './geo.ts';
 import { Ground, PH, PW } from './ground.ts';
 import { Pix } from './pix.ts';
@@ -105,12 +105,14 @@ const buildings: BuildingModel[] = loadBuildings(osm, survey, gate[0]).filter((b
     }
   return total > 0 && inside * 2 >= total;
 });
-for (const b of buildings)
+for (const b of buildings) {
+  const low = lifts(b);
   for (let y = 0; y < b.h; y++)
     for (let x = 0; x < b.w; x++) {
       const px = b.x + x, py = b.y + y;
-      if (b.part[y * b.w + x] && px >= 0 && py >= 0 && px < PW && py < PH) ground.mat[py * PW + px] = MAT.floor;
+      if (b.part[y * b.w + x] && low[y * b.w + x] < 2.4 * PPM && px >= 0 && py >= 0 && px < PW && py < PH) ground.mat[py * PW + px] = MAT.floor;
     }
+}
 
 // ---------- 物件 ----------
 const objects: TiledObject[] = [];
@@ -266,9 +268,11 @@ function parkedCar(h: number): string {
 }
 
 // 楼基也算挡路，下面种树时用
-for (const b of buildings)
+for (const b of buildings) {
+  const low = lifts(b);
   for (let y = 0; y < b.h; y += CELL / 2)
-    for (let x = 0; x < b.w; x += CELL / 2) if (b.part[y * b.w + x]) setSolid(Math.floor((b.x + x) / CELL), Math.floor((b.y + y) / CELL));
+    for (let x = 0; x < b.w; x += CELL / 2) if (b.part[y * b.w + x] && low[y * b.w + x] < 2.4 * PPM) setSolid(Math.floor((b.x + x) / CELL), Math.floor((b.y + y) / CELL));
+}
 
 // 描过的单棵树与行道树：树位和冠幅沿用 S7，未核实树种的整排按位置选一种阔叶树（待核实）
 {
