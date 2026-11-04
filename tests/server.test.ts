@@ -1,7 +1,10 @@
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { describe, expect, it } from 'vitest';
 import { Auth, ApiError, RateLimit, clientIp } from '../server/auth.ts';
 import { ChatHub, type Peer } from '../server/chat.ts';
 import { Db } from '../server/db.ts';
+import { aliyunSign, smsSender } from '../server/sms.ts';
 import { parseOpenMeteo } from '../server/weather.ts';
 import { CHAT, cleanText, isChannel, type ChatLine } from '../shared/social.ts';
 
@@ -164,6 +167,41 @@ describe('聊天', () => {
     expect([...cleanText('字'.repeat(200))].length).toBe(CHAT.max);
     expect(isChannel('room:study')).toBe(true);
     expect(isChannel('room:nope')).toBe(false);
+  });
+});
+
+describe('阿里云短信', () => {
+  it('密钥没配全就不开放', () => {
+    expect(smsSender({ SMS_PROVIDER: 'aliyun', ALIYUN_ACCESS_KEY_ID: 'id' })).toBeUndefined();
+  });
+
+  it('签名可复算，模板参数带验证码和分钟数，返回不是 OK 就抛错', async () => {
+    const got: Record<string, string>[] = [];
+    let reply = { Code: 'OK' };
+    const srv = createServer((req, res) => {
+      let b = '';
+      req.on('data', (c) => (b += c)).on('end', () => {
+        got.push(Object.fromEntries(new URLSearchParams(b)));
+        res.end(JSON.stringify(reply));
+      });
+    });
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+    const env = {
+      SMS_PROVIDER: 'aliyun', ALIYUN_ACCESS_KEY_ID: 'id', ALIYUN_ACCESS_KEY_SECRET: 'secret', ALIYUN_SMS_SIGN_NAME: '签名',
+      ALIYUN_SMS_TEMPLATE_CODE: '100001', ALIYUN_SMS_ENDPOINT: `http://127.0.0.1:${(srv.address() as AddressInfo).port}/`,
+    };
+    try {
+      const sms = smsSender(env)!;
+      await sms.send(PHONE, '012345');
+      const { Signature, ...rest } = got[0];
+      expect(aliyunSign(rest, 'secret').Signature).toBe(Signature);
+      expect(rest).toMatchObject({ Action: 'SendSmsVerifyCode', PhoneNumber: PHONE, SignName: '签名', TemplateCode: '100001' });
+      expect(JSON.parse(rest.TemplateParam)).toEqual({ code: '012345', min: '5' });
+      reply = { Code: 'BUSINESS_LIMIT_CONTROL' };
+      await expect(sms.send(PHONE, '012345')).rejects.toThrow('BUSINESS_LIMIT_CONTROL');
+    } finally {
+      srv.close();
+    }
   });
 });
 
