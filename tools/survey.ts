@@ -75,10 +75,14 @@ export interface Feature {
  * - look：楼型名（tools/facades.ts 的 LOOKS），相似的楼共用一个；不写用 neutral（中性立面）
  * - tweak：只改这栋楼的几个参数（字段同 Look，例如换墙色、窗宽）
  * - features：特色构件（见 Feature）
+ * - like：组团参照（兜底）：这栋楼没有自己的照片，按同组团、同年代、同平面的一栋有照片的楼画，写那栋楼的编号
+ *   （OSM 编号，补描的楼写负数）。只借 look 和 tweak，本楼自己写的 look、tweak 优先；构件和门不借。
+ *   只在视频截图、照片和视差都定不了立面时用，见 docs/mapping.md「组团参照」
  * - src：外观依据的来源编号（R 号、S 号），和 name 的 src 合写在一起
  */
 export interface Appearance {
   look?: string;
+  like?: number;
   tweak?: Record<string, unknown>;
   features?: Feature[];
 }

@@ -78,8 +78,9 @@ export function loadBuildings(osm: { elements: OsmEl[] }, survey: Survey, gateX:
     ...survey.newBuildings.map((b, k) => ({ id: -(k + 1), shape: b as Shape, levels: b.storeys })),
   ];
   const out: BuildingModel[] = [];
+  const entry = (id: number) => (id > 0 ? (survey.buildings[id] ?? {}) : survey.newBuildings[-id - 1]);
   for (const src of sources) {
-    const fix = src.id > 0 ? (survey.buildings[src.id] ?? {}) : survey.newBuildings[-src.id - 1];
+    const fix = entry(src.id);
     if ('drop' in fix && fix.drop) continue;
     const shift = ('shift' in fix && fix.shift) || [0, 0];
     const lean = 'lean' in fix ? fix.lean : undefined;
@@ -101,7 +102,8 @@ export function loadBuildings(osm: { elements: OsmEl[] }, survey: Survey, gateX:
     const meta = NAMED[src.id] ?? { name: '', style: 'plain' as const };
     const b: BuildingModel = {
       id: src.id, name: fix.name ?? meta.name, style: meta.style, x: x0, y: y0, w, h, part: new Uint8Array(w * h), parts: [partOf({ ...fix, look: undefined }, storeys)], extraTop: 0,
-      look: fix.look ?? 'neutral', tweak: fix.tweak ?? {}, features: fix.features ?? [], doors: [],
+      look: fix.look ?? (fix.like ? entry(fix.like).look : undefined) ?? 'neutral',
+      tweak: fix.tweak ?? (fix.like ? entry(fix.like).tweak : undefined) ?? {}, features: fix.features ?? [], doors: [],
     };
     for (let k = 0; k < px.length; k += 2) b.part[(px[k + 1] - y0) * w + px[k] - x0] = 1;
     // 门：从门洞中点往墙里退 1 m 落在这栋楼上的，算这栋楼的门

@@ -20,6 +20,12 @@ describe('楼型', () => {
       const looks = [b.look, ...(b.parts ?? []).map((p) => p.look)].filter((l) => l !== undefined);
       for (const l of looks) expect(LOOKS, `楼 ${id} 的楼型 ${l}`).toHaveProperty(l!);
       for (const k of Object.keys(b.tweak ?? {})) expect(keys.has(k), `楼 ${id} 的 tweak.${k}`).toBe(true);
+      if (b.like !== undefined) {
+        // 参照的楼要存在、有自己的楼型（不能再是参照来的）
+        const ref = entries.find(([k]) => k === String(b.like))?.[1];
+        expect(ref?.look, `楼 ${id} 参照的楼 ${b.like}`).toBeDefined();
+        expect(ref?.like, `楼 ${id} 参照的楼 ${b.like} 本身也是参照来的`).toBeUndefined();
+      }
       for (const f of b.features ?? []) {
         expect(['stair', 'void', 'screen', 'glass', 'colonnade', 'band'], `楼 ${id}`).toContain(f.kind);
         expect('NESW', `楼 ${id} 的 face`).toContain(f.face);
