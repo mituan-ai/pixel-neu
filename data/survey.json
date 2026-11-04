@@ -1,6 +1,6 @@
 {
   "buildings": {
-    "87664782": {"storeys":1,"roof":"dome","rise":12,"name":"游泳馆","src":"S1,S33"},
+    "87664782": {"storeys":1,"roof":"dome","rise":12,"name":"游泳馆","src":"S1,S33,R-bld-09","look":"hall","tweak":{"windows":"none"}},
     "87664796": {"storeys":2,"parts":[{"circle":[-191,503,12],"storeys":4}],"name":"汉卿会堂","src":"S1,S30,S36"},
     "87664797": {"lean":[-7.5,0],"name":"信息学馆","src":"S1,S9,S10,S30"},
     "87664798": {"lean":[-7.5,0],"shift":[1.75,0],"name":"宁恩承图书馆","src":"S1,S6,S30"},
@@ -45,7 +45,7 @@
     "443840375": {"storeys":4},
     "443840376": {"shift":[4,4],"storeys":4,"name":"六舍","src":"S1,S30,S32"},
     "443840377": {"shift":[5,4],"storeys":4,"name":"七舍","src":"S1,S30,S32"},
-    "466226948": {"storeys":1,"roof":"dome","rise":12,"name":"刘长春体育馆","src":"S1,S34"},
+    "466226948": {"storeys":1,"roof":"dome","rise":12,"name":"刘长春体育馆","src":"S1,S34,R-bld-10","look":"hall","tweak":{"windows":"none"}},
     "514987117": {"storeys":3,"name":"一舍食堂","src":"S1,S30,S40"},
     "514987119": {"storeys":4,"name":"三舍","src":"S1,S30,S32"},
     "514987120": {"storeys":4,"name":"三舍C区","src":"S1,S32"},
@@ -65,10 +65,10 @@
     "514992480": {"storeys":5,"name":"十舍","src":"S30,S32"},
     "514992481": {"storeys":4},
     "514992483": {"storeys":5,"name":"化学馆","src":"S1,S42"},
-    "514992485": {"storeys":4,"name":"机电学馆","src":"S1,S31"},
+    "514992485": {"storeys":4,"name":"机电学馆","src":"S1,S31,R-bld-05,R-bld-03","look":"tile","tweak":{"wall":["plain0","plain1","plain2"],"frame":null,"rooftop":"none","penthouse":false,"roofGrid":0}},
     "514992489": {"storeys":4,"name":"何世礼教学馆","src":"S1,S30,S43"},
-    "514993668": {"shift":[2,6],"storeys":4,"name":"理学院","src":"S1"},
-    "514993670": {"shift":[5,0],"storeys":4,"name":"建筑学馆","src":"S1,S31"},
+    "514993668": {"shift":[2,6],"storeys":4,"name":"理学院","src":"S1,R-bld-05","look":"tile","tweak":{"wall":["plain0","plain1","plain2"],"frame":null,"rooftop":"none","penthouse":false,"roofGrid":0}},
+    "514993670": {"shift":[5,0],"storeys":4,"name":"建筑学馆","src":"S1,S31,R-bld-05,R-bld-03","look":"tile","tweak":{"wall":["plain0","plain1","plain2"],"frame":null,"rooftop":"none","penthouse":false,"roofGrid":0}},
     "514995512": {"storeys":4},
     "514995513": {"shift":[2,0],"storeys":4,"name":"蔡冠深楼","src":"S1"},
     "514995514": {"storeys":4,"name":"双馨苑","src":"S1,S30,S39"},
@@ -85,9 +85,9 @@
     "846226465": {"drop":true}
   },
   "newBuildings": [
-    {"poly":[[248,570],[267,570],[267,639],[248,639]],"storeys":4,"name":"冶金学馆","src":"S1,S31"},
-    {"poly":[[267,585],[326,585],[326,599],[267,599]],"storeys":4,"name":"冶金学馆","src":"S1,S31"},
-    {"poly":[[326,570],[344,570],[344,639],[326,639]],"storeys":4,"name":"冶金学馆","src":"S1,S31"},
+    {"poly":[[248,570],[267,570],[267,639],[248,639]],"storeys":4,"name":"冶金学馆","src":"S1,S31,R-bld-02,R-middle-01","look":"tile","tweak":{"wall":["plain0","plain1","plain2"],"frame":null,"rooftop":"none","penthouse":false,"roofGrid":0}},
+    {"poly":[[267,585],[326,585],[326,599],[267,599]],"storeys":4,"name":"冶金学馆","src":"S1,S31,R-bld-02,R-middle-01","look":"tile","tweak":{"wall":["plain0","plain1","plain2"],"frame":null,"rooftop":"none","penthouse":false,"roofGrid":0},"parts":[{"poly":[[289,585],[304,585],[304,599],[289,599]],"storeys":5}],"features":[{"kind":"glass","face":"N","from":[290,585],"to":[303,585],"storeys":[1,4]}]},
+    {"poly":[[326,570],[344,570],[344,639],[326,639]],"storeys":4,"name":"冶金学馆","src":"S1,S31,R-bld-02,R-middle-01","look":"tile","tweak":{"wall":["plain0","plain1","plain2"],"frame":null,"rooftop":"none","penthouse":false,"roofGrid":0}},
     {"poly":[[242,639],[280,639],[280,660],[242,660]],"storeys":4,"name":"冶金学馆","src":"S1,S31"},
     {"poly":[[307,639],[353,639],[353,658],[307,658]],"storeys":4,"name":"冶金学馆","src":"S1,S31"},
     {"poly":[[160,-42],[226,-42],[226,-30],[160,-30]],"storeys":4},
@@ -1025,7 +1025,7 @@
     {"at":[-481.3,499.5],"width":12}
   ],
   "doors": [
-    {"at":[294.25,325.4375],"facing":"W","main":true},
+    {"at":[294.25,325.4375],"facing":"W","main":true,"canopy":"none","width":4},
     {"at":[-157.25,500.9375],"facing":"E","main":true},
     {"at":[129.9375,225.625],"facing":"N","main":true},
     {"at":[128.9375,406],"facing":"S","main":true},
@@ -1035,7 +1035,7 @@
     {"at":[299.9375,753.25],"facing":"S","main":true},
     {"at":[-319.0625,468.25],"facing":"S","main":true},
     {"at":[-352.0625,437.625],"facing":"S","main":true},
-    {"at":[395.5,499.8125],"facing":"W","main":true},
+    {"at":[395.5,499.8125],"facing":"W","main":true,"canopy":"none","width":4},
     {"at":[241.9375,842.125],"facing":"S","main":true},
     {"at":[339.9375,942],"facing":"S","main":true},
     {"at":[234.9375,957.375],"facing":"S","main":true},
