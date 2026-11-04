@@ -76,7 +76,7 @@ node tools/loadtest.ts  压测：默认 40 个登录机器人加 200 个访客�
 - 预设短语和表情保留。`shared/social.ts` 里的短语、表情、讨论室只能追加到末尾：序号就是网络协议。
 - 聊天内容一律按纯文本显示（`textContent`），不拼 HTML。昵称经过 `cleanName`，消息经过 `cleanText`。
 - 改了收集什么数据、存多久，要同步改 `src/legal.ts` 的《隐私政策》。
-- 社群入口（QQ 群、微信）在 `src/config.ts`，二维码放 `assets/community/`。
+- 社群入口（QQ 群）在 `src/config.ts`，二维码放 `assets/community/`。
 - 单房间上限 40 人，满了自动开新房间。
 
 ## 署名与许可

@@ -153,13 +153,6 @@ export class Menu {
     } else qqLines.push(el('p', 'fine', '群号即将公布'));
     card('QQ 群', qqLines, qq.qr);
 
-    const wx = COMMUNITY.wechat;
-    const wxLines: HTMLElement[] = [el('p', 'fine', '微信群二维码 7 天就过期，请先加管理员，由管理员拉你进群。')];
-    if (wx.id) {
-      wxLines.unshift(el('p', '', `${wx.label}：${wx.id}`));
-      wxLines.push(button('复制微信号', 'small', async () => toast((await copyText(wx.id)) ? '微信号已复制' : '复制失败')));
-    }
-    card(wx.label, wxLines, wx.qr);
   }
 
   async share(): Promise<void> {
