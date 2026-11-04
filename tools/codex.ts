@@ -71,7 +71,8 @@ if (cmd === 'start') {
   // 沙箱默认只能写 worktree：提交要写主仓库的 .git，测试要写 node_modules 里的缓存，参考照片放主仓库的 data/ref
   mkdirSync(join(ROOT, 'data/ref'), { recursive: true });
   const writable = [join(ROOT, git(ROOT, 'rev-parse', '--git-common-dir')), join(ROOT, 'node_modules'), join(ROOT, 'data/ref')].flatMap((d) => ['--add-dir', d]);
-  const child = spawn('codex', ['exec', '-C', wt, '-s', 'workspace-write', '-c', 'sandbox_workspace_write.network_access=true', ...writable, '-o', join(HOME, `${t}.md`), prompt(path)], {
+  // 模型和思考强度固定：gpt-6.1-sol、中等，性价比最高
+  const child = spawn('codex', ['exec', '-m', 'gpt-6.1-sol', '-c', 'model_reasoning_effort="medium"', '-C', wt, '-s', 'workspace-write', '-c', 'sandbox_workspace_write.network_access=true', ...writable, '-o', join(HOME, `${t}.md`), prompt(path)], {
     detached: true,
     stdio: ['ignore', log, log],
   });
