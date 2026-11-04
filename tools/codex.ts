@@ -109,7 +109,21 @@ if (cmd === 'start') {
       git(wt, 'add', '-A');
       git(wt, 'commit', '-m', readFileSync(join(ROOT, sheet(t)), 'utf8').split('\n')[0].replace(/^#\s*/, ''));
     }
-    git(ROOT, 'merge', '--no-ff', '-m', `合并 Codex ${t}`, `codex/${t}`);
+    try {
+      git(ROOT, 'merge', '--no-ff', '-m', `合并 Codex ${t}`, `codex/${t}`);
+    } catch {
+      // 几张分片任务单常改同一个文件的不同行（survey.json、楼档案表）：行数没变时逐行三方合并，两边改了同一行才算真冲突
+      const files = git(ROOT, 'diff', '--name-only', '--diff-filter=U').split('\n').filter(Boolean);
+      for (const f of files) {
+        const [base, ours, theirs] = [1, 2, 3].map((k) => git(ROOT, 'show', `:${k}:${f}`).split('\n'));
+        if (base.length !== ours.length || base.length !== theirs.length || base.some((b, i) => ours[i] !== b && theirs[i] !== b && ours[i] !== theirs[i]))
+          throw new Error(`${f} 有真冲突，手动解决后 git commit，再 node tools/codex.ts drop ${t}`);
+        writeFileSync(join(ROOT, f), base.map((b, i) => (theirs[i] !== b ? theirs[i] : ours[i])).join('\n') + '\n');
+        if (f.endsWith('.json')) JSON.parse(readFileSync(join(ROOT, f), 'utf8'));
+        git(ROOT, 'add', f);
+      }
+      git(ROOT, 'commit', '--no-edit');
+    }
   }
   git(ROOT, 'worktree', 'remove', '--force', wt);
   git(ROOT, 'branch', '-D', `codex/${t}`);
