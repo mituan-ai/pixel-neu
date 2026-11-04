@@ -4,7 +4,7 @@ import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { GROUND_CHUNK, METERS_PER_TILE } from '../shared/world.ts';
 import { MAT, MATS, PATTERNS, PAVED, ROAD, type Mat } from './art-ground.ts';
 import { EXTENT, type P } from './geo.ts';
-import { Pix } from './pix.ts';
+import { Pix, rng } from './pix.ts';
 import { PAL, type PalKey } from './palette.ts';
 import { PPM, edt, fillShape, smoothLine } from './shape.ts';
 import type { Field, Shape, Survey } from './survey.ts';
@@ -12,14 +12,20 @@ import type { Field, Shape, Survey } from './survey.ts';
 /** 地图像素宽高 */
 export const PW = (EXTENT.x1 - EXTENT.x0) * PPM, PH = (EXTENT.y1 - EXTENT.y0) * PPM;
 /** 标线：白漆、深色（球网） */
-const MARK = { paint: 1, dark: 2 } as const;
+const MARK = { paint: 1, dark: 2, yellow: 3, patch: 4, metal: 5, crack: 6 } as const;
 /** 路口转角半径的默认值（米） */
 const CORNER = 4;
 
-const hash = (c: number, r: number) => ((c * 73856093) ^ (r * 19349663)) >>> 0;
+const hash = (c: number, r: number) => {
+  let h = Math.imul(c, 73856093) ^ Math.imul(r, 19349663);
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
+  return (h ^ (h >>> 16)) >>> 0;
+};
 const rgba = (k: PalKey) => [PAL[k] >> 16, (PAL[k] >> 8) & 255, PAL[k] & 255, 255];
 /** 白漆、深色标线、路缘、路缘内侧、路沿石、路沿石外侧 */
 const INK = { paint: rgba('paint'), dark: rgba('ink'), curb: rgba('curb'), curbIn: rgba('grass0'), kerb: rgba('stone2'), kerbOut: rgba('stone0') };
+const MARK_INK = [INK.paint, INK.paint, INK.dark, rgba('bumpYellow'), rgba('asph0'), rgba('asph2'), rgba('asph0')];
+const SHADE = new Map<number, number[]>([[PAL.grass1, rgba('groundGrass')], [PAL.grass0, rgba('groundWood')], [PAL.asph1, rgba('groundAsphalt')]]);
 /** 世界米 → 像素 */
 export const toPx = ([x, y]: P): P => [(x - EXTENT.x0) * PPM, (y - EXTENT.y0) * PPM];
 
@@ -66,7 +72,7 @@ export class Ground {
     for (let x = 0; x < w; x++) (outside[x] = 1), (outside[(h - 1) * w + x] = 1);
     for (let y = 0; y < h; y++) (outside[y * w] = 1), (outside[y * w + w - 1] = 1);
     const d2 = edt(outside, w, h);
-    const soft = new Set<number>([MAT.grass, MAT.wood, MAT.paving]);
+    const soft = new Set<number>([MAT.grass, MAT.wood, MAT.paving, MAT.plaza, MAT.sidewalk, MAT.slab, MAT.permeable, MAT.dirt]);
     for (let y = 0; y < h; y++)
       for (let x = 0; x < w; x++) {
         const i = (y0 + y) * PW + x0 + x;
@@ -92,6 +98,82 @@ export class Ground {
           }
         }
         along += len;
+      }
+    }
+  }
+
+  /** 卫星图标线和已有车位排 */
+  paintMarks(marks: Survey['marks'], stalls: Survey['stalls']): void {
+    const paint = (shape: Shape, ink: number) => fillShape(shape, (x, y) => {
+      const i = y * PW + x;
+      if (ROAD.has(this.mat[i])) this.mark[i] = ink;
+    }, PW, PH);
+    for (const m of marks) {
+      if (m.kind === 'arrow') {
+        const a = m.dir * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
+        const side = m.shape === 'left' ? -1 : 1;
+        const poly: P[] = m.shape === 'straight'
+          ? [[-0.15, -2], [0.15, -2], [0.15, 0.7], [0.8, 0.7], [0, 2], [-0.8, 0.7], [-0.15, 0.7]]
+          : [[-0.15, -2], [0.15, -2], [0.15, 0.35], [0.9, 0.35], [0.9, -0.3], [2, 0.5], [0.9, 1.3], [0.9, 0.65], [-0.15, 0.65]].map(([u, v]): P => [u * side, v]);
+        paint({ poly: poly.map(([u, v]): P => [m.at[0] + u * ca + v * sa, m.at[1] + u * sa - v * ca]) }, MARK.paint);
+        continue;
+      }
+      const dx = m.to[0] - m.from[0], dy = m.to[1] - m.from[1], len = Math.hypot(dx, dy);
+      const at = (u: number, v: number): P => [m.from[0] + (dx * u - dy * v) / len, m.from[1] + (dy * u + dx * v) / len];
+      if (m.kind === 'stop') paint({ line: [m.from, m.to], width: 0.3 }, MARK.paint);
+      else {
+        if (m.kind === 'zebra') paint({ poly: [at(0, -m.width / 2), at(len, -m.width / 2), at(len, m.width / 2), at(0, m.width / 2)] }, 0);
+        const step = m.kind === 'zebra' ? 1.05 : 0.5, half = m.kind === 'zebra' ? m.width / 2 : 0.25;
+        for (let u = 0; u < len; u += step) {
+          const end = Math.min(len, u + (m.kind === 'zebra' ? 0.45 : step));
+          paint({ poly: [at(u, -half), at(end, -half), at(end, half), at(u, half)] }, m.kind === 'zebra' ? MARK.paint : Math.round(u / step) % 2 ? MARK.dark : MARK.yellow);
+        }
+      }
+    }
+    for (const { at: [x, y], n, back } of stalls) {
+      const vertical = back === 'E' || back === 'W', side = back === 'E' || back === 'S' ? -1 : 1;
+      const at = (u: number, v: number): P => vertical ? [x + v * side, y + u] : [x + u, y + v * side];
+      paint({ line: [at(0, 0), at(n * 2.5, 0)], width: 1 / PPM }, MARK.paint);
+      for (let k = 0; k <= n; k++) paint({ line: [at(k * 2.5, 0), at(k * 2.5, 5)], width: 1 / PPM }, MARK.paint);
+    }
+  }
+
+  /** 沿沥青中线的井盖、补丁和裂缝 */
+  paintDetails(areas: Survey['areas']): void {
+    for (const a of areas) {
+      if (a.kind !== 'asphalt' || !a.line) continue;
+      const line = smoothLine(a.line, a.curve ?? 0);
+      for (let kind = 0; kind < 3; kind++) {
+        const r = rng(hash(Math.round(line[0][0] * PPM), Math.round(line[0][1] * PPM)) + kind);
+        const gap = () => kind === 0 ? 30 + r() * 20 : kind === 1 ? 40 + r() * 40 : 90 + r() * 50;
+        let next = gap() / 2, along = 0;
+        for (let k = 1; k < line.length; k++) {
+          const [p, q] = [line[k - 1], line[k]], len = Math.hypot(q[0] - p[0], q[1] - p[1]);
+          for (; next < along + len; next += gap()) {
+            const t = (next - along) / len, offset = (r() - 0.5) * 1.2;
+            const x = p[0] + (q[0] - p[0]) * t - (q[1] - p[1]) * offset / len;
+            const y = p[1] + (q[1] - p[1]) * t + (q[0] - p[0]) * offset / len;
+            const w = kind === 1 ? 1 + r() * 2 : kind === 0 ? 0.7 : 2;
+            const h = kind === 1 ? 1 + r() * 2 : kind === 0 ? 0.7 : 1;
+            const [x0, y0] = toPx([x - w / 2 - 0.5, y - h / 2 - 0.5]).map(Math.floor);
+            const [x1, y1] = toPx([x + w / 2 + 0.5, y + h / 2 + 0.5]).map(Math.ceil);
+            let clear = true;
+            for (let py = y0; py <= y1 && clear; py++)
+              for (let px = x0; px <= x1; px++)
+                if (px < 0 || py < 0 || px >= PW || py >= PH || this.mat[py * PW + px] !== MAT.asphalt) { clear = false; break; }
+            if (!clear) continue;
+            const square = r() < 0.5;
+            const shape: Shape = kind === 0 && !square ? { circle: [x, y, 0.35] }
+              : kind === 2 ? { line: [[x - 1, y], [x - 0.3, y - 0.35], [x + 0.2, y + 0.25], [x + 1, y - 0.2]], width: 1 / PPM }
+              : { poly: [[x - w / 2, y - h / 2], [x + w / 2, y - h / 2], [x + w / 2, y + h / 2], [x - w / 2, y + h / 2]] };
+            if (kind === 0 && square) shape.poly = [[x - 0.3, y - 0.3], [x + 0.3, y - 0.3], [x + 0.3, y + 0.3], [x - 0.3, y + 0.3]];
+            fillShape(shape, (px, py) => {
+              const i = py * PW + px;
+              if (!this.mark[i]) this.mark[i] = kind === 0 ? (px + py) % 3 === 0 ? MARK.patch : MARK.metal : kind === 1 ? MARK.patch : MARK.crack;
+            }, PW, PH);
+          }
+          along += len;
+        }
       }
     }
   }
@@ -244,7 +326,7 @@ export class Ground {
   private color(x: number, y: number, out: Uint8ClampedArray, o: number): void {
     const i = y * PW + x, m = this.mat[i];
     if (this.mark[i]) {
-      out.set(this.mark[i] === MARK.paint ? INK.paint : INK.dark, o);
+      out.set(MARK_INK[this.mark[i]], o);
       return;
     }
     const near = (set: Set<number>, d: number) =>
@@ -252,13 +334,23 @@ export class Ground {
     if (m === MAT.grass || m === MAT.wood) {
       if (near(PAVED, 1)) return void out.set(INK.curb, o);
       if (near(PAVED, 2)) return void out.set(INK.curbIn, o);
-    } else if (m === MAT.paving) {
+    } else if (m === MAT.paving || m === MAT.plaza || m === MAT.sidewalk || m === MAT.slab || m === MAT.permeable) {
       if (near(ROAD, 1)) return void out.set(INK.kerb, o);
       if (near(ROAD, 2)) return void out.set(INK.kerbOut, o);
     }
     const pats = PATTERNS[MATS[m]];
-    const pat = pats[pats.length > 1 ? hash(x >> 4, y >> 4) % pats.length : 0];
-    out.set(pat.data.subarray(((y & 15) * 16 + (x & 15)) * 4, ((y & 15) * 16 + (x & 15)) * 4 + 4), o);
+    const wx = x + EXTENT.x0 * PPM, wy = y + EXTENT.y0 * PPM, T = pats[0].w;
+    const pat = pats[hash(Math.floor(wx / T), Math.floor(wy / T)) % pats.length];
+    const offset = (((wy % T + T) % T) * T + (wx % T + T) % T) * 4;
+    out.set(pat.data.subarray(offset, offset + 4), o);
+    if (m === MAT.grass || m === MAT.wood || ROAD.has(m)) {
+      const c = Math.floor(wx / 256), r = Math.floor(wy / 256);
+      const u = (wx / 256 - c) ** 2 * (3 - 2 * (wx / 256 - c)), v = (wy / 256 - r) ** 2 * (3 - 2 * (wy / 256 - r));
+      const a = (hash(c, r) & 65535) * (1 - u) + (hash(c + 1, r) & 65535) * u;
+      const b = (hash(c, r + 1) & 65535) * (1 - u) + (hash(c + 1, r + 1) & 65535) * u;
+      const shade = SHADE.get((out[o] << 16) | (out[o + 1] << 8) | out[o + 2]);
+      if (a * (1 - v) + b * v < 32768 && shade) out.set(shade, o);
+    }
   }
 
   /** 烘焙地面分块图，返回块数 */
@@ -285,7 +377,10 @@ export class Ground {
       for (let c = 0; c < w; c++) {
         const m = this.mat[(r * S + S / 2) * PW + c * S + S / 2];
         if (m === MAT.floor) pix.px(c, r, 0x93989a);
-        else pix.data.set(PATTERNS[MATS[m]][0].data.subarray(8 * 16 * 4 + 32, 8 * 16 * 4 + 36), (r * w + c) * 4);
+        else {
+          const pat = PATTERNS[MATS[m]][0], i = ((Math.floor(pat.h / 2) + 1) * pat.w + Math.floor(pat.w / 2) + 1) * 4;
+          pix.data.set(pat.data.subarray(i, i + 4), (r * w + c) * 4);
+        }
       }
     return pix;
   }

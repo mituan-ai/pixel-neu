@@ -156,6 +156,14 @@ export const PAL = {
   autumnRed0: 0x793f42,
   autumnRed1: 0xac5753,
   autumnRed2: 0xd78968,
+
+  // 地面：草地和路面深色斑块、土路、减速带
+  groundGrass: 0x558640,
+  groundWood: 0x396536,
+  groundAsphalt: 0x52555e,
+  dirt0: 0x766044,
+  dirt1: 0x987d57,
+  bumpYellow: 0xe0ba45,
 } as const;
 
 export type PalKey = keyof typeof PAL;

@@ -6,7 +6,7 @@ import type { P } from './geo.ts';
 
 /** wood：林地，地面是草，树冠按轮廓成片；单棵树看不清的林子都用它 */
 /** track：塑胶跑道；pitch：足球场草皮（天然或人工）；court：硬地球场 */
-export type AreaKind = 'asphalt' | 'paving' | 'parking' | 'grass' | 'wood' | 'hedge' | 'planter' | 'water' | 'track' | 'pitch' | 'court';
+export type AreaKind = 'asphalt' | 'paving' | 'plaza' | 'sidewalk' | 'slab' | 'permeable' | 'dirt' | 'parking' | 'grass' | 'wood' | 'hedge' | 'planter' | 'water' | 'track' | 'pitch' | 'court';
 
 /**
  * 一块地面的形状，四种写法选一种：
@@ -122,6 +122,8 @@ export interface Survey {
    */
   tilt: { box: [number, number, number, number]; ref: number; off?: P }[];
   areas: (Shape & { kind: AreaKind })[];
+  /** 路面标线：斑马线中线和横道宽；停止线；箭头朝向（上北为 0°，顺时针）；减速带 */
+  marks: ({ kind: 'zebra'; from: P; to: P; width: number } | { kind: 'stop'; from: P; to: P } | { kind: 'arrow'; at: P; dir: number; shape: 'straight' | 'left' | 'right' } | { kind: 'bump'; from: P; to: P })[];
   /** 标准运动场（见 Field），画在 areas 之上 */
   fields: Field[];
   /** 每棵树：树干位置和冠幅半径（米） */
