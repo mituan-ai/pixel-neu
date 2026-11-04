@@ -126,8 +126,8 @@ export interface Survey {
   fields: Field[];
   /** 每棵树：树干位置和冠幅半径（米） */
   trees: [number, number, number][];
-  /** 一排等间距的树（行道树）：从 from 到 to（两端都种），间距 gap 米，冠幅半径 r 米 */
-  treeRows: { from: P; to: P; gap: number; r: number }[];
+  /** 一排等间距的树（行道树）：从 from 到 to（两端都种），间距 gap 米，冠幅半径 r 米；species 是有来源的树种（shared/flora.ts） */
+  treeRows: { from: P; to: P; gap: number; r: number; species?: string }[];
   /** 一排等间距的路灯：从 from 到 to（两端都放），间距 gap 米；sprite 不写用 lamp */
   lampRows: { from: P; to: P; gap: number; sprite?: string }[];
   /**

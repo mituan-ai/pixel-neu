@@ -2,6 +2,7 @@
 // 产物写进 assets/，同时在 data/preview.png 拼一张全图预览（不进仓库），用来检查风格是否统一。
 // 某张图改成手绘后，把它从 HANDMADE 之外的生成列表里拿掉，避免被覆盖（规则见 assets/AGENTS.md）。
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { SPECIES, treeFrame, type Season } from '../shared/flora.ts';
 import { EMOTES } from '../shared/social.ts';
 import { vehicleKey } from '../shared/vehicles.ts';
 import { FACING, VIEWS, VIEW_NAME, type View } from '../shared/view.ts';
@@ -9,6 +10,7 @@ import { GROUND_CHUNK, LAYER, METERS_PER_TILE, TILE, prop, type TiledMap } from 
 import { drawAvatarSheet } from './art-avatar.ts';
 import { drawBikes } from './art-bikes.ts';
 import { drawFauna } from './art-fauna.ts';
+import { drawFlora } from './art-flora.ts';
 import { drawFx } from './art-fx.ts';
 import { drawUi } from './art-ui.ts';
 import { drawVehicles } from './art-vehicles.ts';
@@ -16,9 +18,8 @@ import { drawBuilding } from './art-building.ts';
 import { loadBuildings } from './buildings.ts';
 import { toWorld } from './geo.ts';
 import { PAL, type PalKey } from './palette.ts';
-import { Pix, loadPix, packAtlas, rng, type Sprite } from './pix.ts';
+import { Pix, loadPix, packAtlas, type Sprite } from './pix.ts';
 import { loadSurvey } from './survey.ts';
-import { TREES } from './tiles.ts';
 
 const out = (p: string) => new URL(`../assets/${p}`, import.meta.url);
 /** 每米像素（物件和树按真实尺寸画） */
@@ -41,59 +42,6 @@ function shadowUnder(p: Pix, cx: number, cy: number, rx: number, ry: number): vo
   for (let y = -ry; y <= ry; y++)
     for (let x = -Math.round(rx); x <= rx; x++)
       if ((x * x) / (rx * rx) + (y * y) / (ry * ry) <= 1 && !p.opaque(Math.round(cx + x), Math.round(cy + y))) p.px(cx + x, cy + y, 'shadow', 60);
-}
-
-/** 阔叶树：树冠半径 R 米。树冠由许多小团叶簇成，左上亮、右下暗 */
-function broadleaf(R: number, seed: number): PropArt {
-  const r = Math.round(R * PPM), ry = Math.round(r * 0.85), trunk = 11;
-  const sy = Math.round(r * 0.3);
-  const w = 2 * r + 12 + Math.round(r * 0.3), h = 2 * ry + trunk + 6 + sy;
-  const p = new Pix(w, h);
-  const rand = rng(seed);
-  const cx = r + 6, cy = ry + 3, ay = h - sy - 2;
-  p.rect(cx - 1, cy + ry * 0.4, 3, ay - cy - ry * 0.4, 'trunk');
-  p.vline(cx - 1, cy + ry * 0.4, ay - cy - ry * 0.4, 'brick0');
-  const blob = Math.max(3, Math.round(r * 0.3));
-  for (let k = 0; k < r * 1.6; k++) {
-    const a = rand() * Math.PI * 2, d = Math.sqrt(rand()) * (1 - blob / r);
-    const x = cx + Math.cos(a) * d * r, y = cy + Math.sin(a) * d * ry;
-    const light = (x - cx) / r + (y - cy) / ry;
-    p.ellipse(Math.round(x), Math.round(y), blob, Math.round(blob * 0.85), light < -0.5 ? 'leaf2' : light < 0.4 ? 'leaf1' : 'leaf0');
-  }
-  // 亮面上再点几簇高光
-  for (let k = 0; k < r / 4; k++) {
-    const a = Math.PI * (1.1 + rand() * 0.6), d = 0.3 + rand() * 0.45;
-    p.ellipse(Math.round(cx + Math.cos(a) * d * r), Math.round(cy + Math.sin(a) * d * ry), Math.round(blob / 2), Math.round(blob / 2.5), 'grass3');
-  }
-  p.outline('ink');
-  // 地面阴影最后画：不描边，落在树干右下
-  shadowUnder(p, cx + r * 0.3, ay, r * 0.9, sy);
-  return { pix: p, ax: Math.round(cx), ay };
-}
-
-/** 针叶树：底部半径 R 米，高约 3.2R，层层收分 */
-function conifer(R: number, seed: number): PropArt {
-  const r = Math.round(R * PPM), hc = Math.round(R * 3.2 * PPM), trunk = 5;
-  const sy = Math.round(r * 0.3);
-  const w = 2 * r + 12 + Math.round(r * 0.4), h = hc + trunk + 6 + sy;
-  const p = new Pix(w, h);
-  const rand = rng(seed);
-  const cx = r + 6, ay = h - sy - 2, base = ay - trunk;
-  p.rect(cx - 1, base - 2, 3, trunk + 2, 'trunk');
-  const tiers = Math.max(4, Math.round(R * 2));
-  for (let t = 0; t < tiers; t++) {
-    // 每层是一个下沿略垂的三角，越往上越窄
-    const yb = base - (t * hc * 0.8) / tiers, ht = (hc * 0.38) * (1 - t / tiers / 2);
-    const half = r * (1 - t / tiers) + 2;
-    for (let y = 0; y < ht; y++) {
-      const hw = Math.round(half * ((y + 1) / ht) * (0.9 + 0.1 * rand()));
-      const yy = Math.round(yb - ht + y);
-      for (let x = -hw; x <= hw; x++) p.px(cx + x, yy, x < -hw / 3 ? 'pine2' : x > hw / 3 ? 'pine0' : 'pine1');
-    }
-  }
-  p.outline('ink');
-  shadowUnder(p, cx + r * 0.4, ay, r, sy);
-  return { pix: p, ax: cx, ay };
 }
 
 /** 校名「東北大學」的 12 px 点阵（文泉驿点阵正黑栅格化），竖排刻在北门西侧大石柱上 */
@@ -492,11 +440,32 @@ for (const f of readdirSync(new URL('../art/props/', import.meta.url)).filter((f
   const depth = (j.screen_footprint_m ?? j.footprint_m)[1] * PPM;
   PROPS[name] = { pix: loadPix(new URL(`../art/props/${f}`, import.meta.url)), ax: j.ax, ay: Math.round(j.ay - depth / 2) };
 }
-// 树名里的数字是树冠半径（分米）
-TREES.forEach((name, i) => {
-  const R = Number(name.split('-')[1]) / 10;
-  PROPS[name] = name.startsWith('pine') ? conifer(R, 300 + i) : broadleaf(R, 300 + i);
-});
+const TREE_ART = drawFlora();
+Object.assign(PROPS, TREE_ART);
+
+// 树木联系表：每行一个树种，春、夏、秋、冬分列，列内列出全部尺寸和变体
+{
+  const seasons: Season[] = ['spring', 'summer', 'autumn', 'winter'];
+  const cw = Math.max(...Object.values(TREE_ART).map((a) => a.pix.w)) + 6;
+  const ch = Math.max(...Object.values(TREE_ART).map((a) => a.pix.h)) + 8;
+  const count = Math.max(...SPECIES.map((t) => t.sizes.length * t.variants));
+  const k = 2, sheet = new Pix(cw * count * seasons.length * k, ch * SPECIES.length * k);
+  sheet.rect(0, 0, sheet.w, sheet.h, 'grey2');
+  SPECIES.forEach((t, row) => seasons.forEach((s, col) => {
+    sheet.rect(col * count * cw * k, row * ch * k, count * cw * k - 2, ch * k - 2, col % 2 ? 'grey3' : 'grey2');
+    t.sizes.forEach((r, j) => {
+      for (let v = 0; v < t.variants; v++) {
+        const a = TREE_ART[treeFrame(t.id, r, v, s)], ox = (col * count + j * t.variants + v) * cw + cw / 2 - a.ax, oy = (row + 1) * ch - a.ay - 4;
+        for (let y = 0; y < a.pix.h; y++) for (let x = 0; x < a.pix.w; x++) {
+          const i = (y * a.pix.w + x) * 4;
+          if (a.pix.data[i + 3]) sheet.rect((ox + x) * k, (oy + y) * k, k, k, (a.pix.data[i] << 16) | (a.pix.data[i + 1] << 8) | a.pix.data[i + 2]);
+        }
+      }
+    });
+  }));
+  mkdirSync(new URL('../data/', import.meta.url), { recursive: true });
+  sheet.save(new URL('../data/trees-sheet.png', import.meta.url));
+}
 
 {
   // 半透明的投影像素不进图集：游戏里按太阳位置实时投影（src/shadows.ts），预览图上保留

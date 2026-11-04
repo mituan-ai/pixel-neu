@@ -58,6 +58,16 @@
 | S47 | 东北大学百年校庆网站「奋进百年 起航东大」建设年表 | https://100.neu.edu.cn/（发布日期未标，访问2026-11-03；R-bld-17） | 1951年10月建设南湖新校区、1952年9月部分建筑投入使用；不能给所有既有楼套用同一年份 |
 | S48 | 东北大学新闻网转载《沈阳日报》「东北大学百年百事」20–22 | https://neunews.neu.edu.cn/info/1003/503871.htm（新闻来源2023-08-30，访问2026-11-03；R-bld-28） | 建筑学馆等一批建筑1952年9月竣工的校史记载；一舍年份与S28有冲突，采用后勤工程稿并保留异说，不据整馆年份推分翼竣工年 |
 | S49 | 东北大学「东大·冬」 | https://www.neu.edu.cn/info/1081/7811.htm（发布日期、拍摄日未标，访问2026-11-03；R-bld-04） | 信息学馆北面与院内、图书馆旧外墙；未定位的柱廊和红砖楼近景不套给南湖其他楼，不据网页现存认定照片为当前外观 |
+| S50 | 沈阳市城乡建设局《2023年沈阳市街路更新设计导则》植物配置，印刷页58 | https://www.shenyang.gov.cn/zwgk/zcwj/zfwj/bmwj/202312/P020231201574178896174.pdf（2023年，文件路径2023-12；访问2026-11-03） | 列有油松、红皮云杉、银杏、国槐、小叶丁香等；只证明沈阳绿化适用树种，不证明南湖具体树位 |
+| S51 | Xu et al., Leaf Phenological Characters of Main Tree Species in Urban Forest of Shenyang，PLOS ONE 9(6):e99277 | https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0099277（2014-06-25，访问2026-11-03） | 沈阳树木园2005–2009年观测：大部分树种4月上中旬展叶、5月上中旬展叶结束，部分9月下旬开始落叶，87%在10月中旬至11月上旬落叶结束；包含杨、榆、银杏，不是校园逐株物候表 |
+| S52 | 殷奕斓（沈阳市园林规划设计院）《沈阳地区常用树种及景观应用》，《建材与装饰》2020年第5期 | https://m.fx361.com/news/2020/0216/17500536.html（2020-02-16，访问2026-11-03） | 列出油松、红皮云杉、新疆杨、垂柳、银杏及灌木紫丁香；与S50交叉确认地区适用性，榆树另据S51的Ulmus pumila |
+| S53 | Wikipedia / Wikimedia Commons「Pinus tabuliformis」照片 PinusTabulaeformis4.jpg | https://en.wikipedia.org/wiki/Pinus_tabuliformis（页面及照片发布日期未标，访问2026-11-03；本地 `data/ref/trees/trees-ref-Pinus_tabuliformis.png`） | 油松横展的平顶冠、分层枝、褐色干和深绿针叶；只参考冠形，不证明校园树种或尺寸 |
+| S54 | The Gymnosperm Database「Picea koraiensis」与Wikipedia同名条目照片 | https://www.conifers.org/pi/Picea_koraiensis.php；https://en.wikipedia.org/wiki/Picea_koraiensis（前者野生树照片2010-10-18，网页发布日期未标，访问2026-11-03；本地 `data/ref/trees/trees-ref-Picea_koraiensis.png` 是针叶近景） | 红皮云杉锥形冠、水平枝层与绿色针叶；近景不能量整株高度，窄塔形参考前者形态描述，整树照片未下载成功 |
+| S55 | Wikipedia / Wikimedia Commons「Populus alba」照片 PopulusAblaPyramidalis.jpg | https://en.wikipedia.org/wiki/Populus_alba（发布日期未标，访问2026-11-03；本地 `data/ref/trees/trees-ref-Populus_alba.png`） | 新疆杨型高瘦树冠、上举枝条；只作为目录杨树的冠形参考，不把泛称杨树识别成某个校园栽培品种 |
+| S56 | Wikipedia / Wikimedia Commons「Salix babylonica」照片 Château de Chenonceau - jardin Russell-Page (01).jpg | https://en.wikipedia.org/wiki/Salix_babylonica（发布日期未标，访问2026-11-03；本地 `data/ref/trees/trees-ref-Salix_babylonica.png`） | 拱起的主枝和下垂细枝、宽冠、黄绿色叶；只作目录柳树的形态参考 |
+| S57 | Wikipedia / Wikimedia Commons「Ulmus pumila」照片 Image-Ulmus pumila (Ulmus gobicus) in Gobi Desert.jpg | https://en.wikipedia.org/wiki/Ulmus_pumila（发布日期未标，访问2026-11-03；本地 `data/ref/trees/trees-ref-Ulmus_pumila.png`） | 分叉主干、不规则圆冠；荒漠孤树只参考分枝与冠形，不代表校园修剪形态 |
+| S58 | Wikipedia / Wikimedia Commons「Ginkgo biloba」照片 GINKGOBAUM-2.jpg及秋叶照片 | https://en.wikipedia.org/wiki/Ginkgo_biloba（发布日期未标，访问2026-11-03；本地 `data/ref/trees/trees-ref-Ginkgo_biloba.png`、`data/ref/trees/trees-ref-ginkgo-autumn.png`） | 上窄下宽的卵形冠、扇叶、秋季金黄；照片不是东北大学校园 |
+| S59 | Wikipedia / Wikimedia Commons「Syringa oblata」照片 SyringaOblata.jpg | https://en.wikipedia.org/wiki/Syringa_oblata（发布日期未标，访问2026-11-03；本地 `data/ref/trees/trees-ref-Syringa_oblata.png`） | 紫丁香多干灌丛、绿叶和紫色花序；本文只画叶与枝，秋叶暖红按条目描述概括；近景不能量整株冠幅 |
 
 ## 待核实
 
@@ -71,6 +81,10 @@
 | TASK-14 航拍立面方位与资料时效 | R-bld-05的00:22/00:52能辨图书馆北面及侧面；旧library/info索引中的西北/东北与侧墙标法仍需按相机位置复核，本次不写死侧墙方向。图书馆2023年施工前旧照与新视频分开；媒体路径250930不当作拍摄日。二舍R-bld-07两面转角也未定地理朝向 | 带相机定位的原视频、拍摄日期及无遮挡近照；不可见面保持中性，不镜像补窗 |
 | TASK-14 楼型与窗间距 | 已定位外观可用现有tile/hall及tweak表达；浅灰米色点窗的wall三档与取消窗套只是按照片目视归类，未测真实色值。默认bay/win/winH没有同平面标尺，未据远景改参数；两馆曲面屋盖和入口玻璃需分区/构件，不能拿hall普通平顶当实楼 | 照片标尺或立面图；后续TASK-15～18逐栋量开间及构件位置。本次未新增楼型/颜色，未写survey外观或name/src |
 | TASK-14 全校参考图与公开照片缺口 | 2017年校园示意图复用已有 `data/ref/sides/R-sides-03-01.jpg`，本次原网页未成功取回；R-bld-08和R-bld-12可核对检索正文但直连未取回。官网建筑/冬景相册混有浑南及未定位近景，不计为南湖无名楼照片 | 当前完整南湖校园图、可辨楼牌的全校航拍或地面视频；照片、原图和屋面裁图均不进仓库 |
+| TASK-19 树种与位置 | `survey.json` 的单树、行道树坐标、间距和冠幅及林地边界全部沿用S7与TASK-04既有描图，本次未新增实测坐标。公开资料未能把南湖某条树排和树种可靠对应，因此不在 `treeRows` 填入 `species`；缺树种整排按所在直线的位置哈希选一种阔叶树，共端点的同行分段保持同种，林地按S50–S52的沈阳常见树种混种 | 校园逐排树种调查或能定位的清晰照片；目前的树种分布是推定，不能作为真实校园植物名录 |
+| TASK-19 林地密度与灌木 | 只在S7既有wood范围内生成：64 m低频噪声分档，值<0.32空地、0.32–0.60疏林约11 m、其余密林约5.5 m；位置抖动±0.2 m。同片主种约75%、次种20%、其他5%，林缘2–4 m带按4 m网格放紫丁香，楼前已有林地同样处理，不向未描绿地新增灌木 | 所有网格、噪声档、比例、林缘灌木位置及0.6 m灌木碰撞占地均来自TASK-19的程序化表现约定，非卫星逐株测量；密度、空地与真实林下通道待实地核实 |
+| TASK-19 树木比例和色彩 | 乔木冠幅半径档沿用旧树20–40 dm范围并简化为每种3档，紫丁香8/12/15 dm取自任务单8–15 dm范围；树高/冠幅半径、冠心高/半径分别暂设：油松3.4/2.1、云杉4.5/2.5、杨5.2/3.1、柳3.4/2.1、榆3.3/2.2、银杏4.2/2.6、丁香1.8/0.9。参考S53–S59可见整树高宽关系（高/冠宽×2）、枝下高和冠形作像素轮廓估计，局部照片仅参考枝叶，不从其外推实测高度；丁香按低矮团状约定估高。颜色按照片嫩绿、深绿和秋叶暖色作色板概括 | 比例均是画法估值、无校园逐株测高，需整树正视照与测量；榆橙黄、丁香红褐是暖秋色概括，不能当作每年必然叶色 |
+| TASK-19 统一换季日期 | S51观测支持4月萌叶、5月展叶完成、9月下旬至11月上旬落叶的区间；显示统一取北京时间4月15日、5月15日、9月25日、11月5日切换。秋色起点由落叶期近似；常绿树不换帧 | 逐树种、逐年份的真实变色与落叶日有差异，以上四天是显示估值，不是物候实测日 |
 | S2、S3、S4 的具体页面 | 只记了类别 | 具体链接和访问日期 |
 | 「大书」「能量球」雕塑外观 | 中性占位 | 清晰照片 |
 | 信息学馆各段层数 | 按 S9 照片数层：主体 4 层，北楼中段 5 层，塔楼 7 层 | 第二个独立来源或建筑资料 |
