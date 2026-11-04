@@ -44,7 +44,7 @@ function sample(look: string, w: number, d: number, storeys: number, extra: Part
   const W = w * PPM, H = d * PPM;
   return {
     id: 1, name: '', style: 'plain', x: 0, y: 0, w: W, h: H, part: new Uint8Array(W * H).fill(1),
-    parts: [{ wall: levelPx(storeys), roof: 'flat', rise: 0 }], extraTop: 0, look, tweak: {}, features: [], doors: [], ...extra,
+    parts: [{ wall: levelPx(storeys), lift: 0, roof: 'flat', rise: 0 }], extraTop: 0, look, tweak: {}, features: [], doors: [], ...extra,
   };
 }
 /** 样楼上的世界米坐标：南墙 y = d，北墙 y = 0（相对样楼西北角） */
@@ -85,6 +85,18 @@ if (ids.length) {
   hip.parts[0] = { ...hip.parts[0], roof: 'hip', rise: 4 * PPM };
   rows.push([drawBuilding(gable, 0), drawBuilding(hip, 0), drawBuilding(hip, 1)]);
   console.log('坡屋顶：双坡红砖（南）、四坡黄楼红瓦（南、东）');
+  // 虚构样楼的尺寸和分区均据 TASK-27 第 6 步。
+  const passage = sample('brick', 40, 14, 5);
+  passage.parts.push({ ...passage.parts[0], lift: Math.round(3.6 * PPM) });
+  for (let y = 0; y < passage.h; y++)
+    for (let x = 17 * PPM; x < 23 * PPM; x++) passage.part[y * passage.w + x] = 2;
+  const bridge = sample('brick', 44, 16, 4);
+  bridge.parts.push({ wall: Math.round(14.4 * PPM), lift: Math.round(7.2 * PPM), roof: 'flat', rise: 0 });
+  for (let y = 0; y < bridge.h; y++)
+    for (let x = 16 * PPM; x < 28 * PPM; x++) bridge.part[y * bridge.w + x] = y >= 6 * PPM && y < 10 * PPM ? 2 : 0;
+  rows.push(VIEWS.map((v) => drawBuilding(passage, v)));
+  rows.push(VIEWS.map((v) => drawBuilding(bridge, v)));
+  console.log('悬空体积（四视角）：楼洞、连廊');
 }
 
 const gap = 8, k = 2;
