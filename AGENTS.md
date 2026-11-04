@@ -27,7 +27,7 @@ art/      公开美术仓库 mituan-ai/pixel-neu-art 的 git 子模块：物件 
 art-inbox/ 美术草稿与第三方候选素材，审核通过的移到 art/；约束见 art-inbox/AGENTS.md，除该文件外不进仓库
 assets/   运行时资源（Vite publicDir），美术约束见 assets/AGENTS.md；ground/ 是 npm run map 烘焙的地面分块
 data/     原始资料：osm.json（OSM）、survey.json（从卫星图描的地面、树、楼基校正）；sat-*.png、check.png、parallax.png、ref/（照片和视频截图）是本地参考，不进仓库
-docs/     sources.md：资料来源与待核实；roadmap.md：待办清单；mapping.md：描图规则；deploy.md：服务端环境变量与上线；refs/：各区域参考资料的文字索引；codex/：给 Codex 的通用提示词
+docs/     sources.md：资料来源与待核实；roadmap.md：待办清单；design.md：产品设计；mapping.md：描图规则；deploy.md：服务端环境变量与上线；refs/：各区域参考资料的文字索引；codex/：给 Codex 的通用提示词
 server/   Colyseus 服务端
 shared/   前后端和工具共用：world.ts、social.ts、state.ts、view.ts（四视角换算）
 src/      浏览器端
