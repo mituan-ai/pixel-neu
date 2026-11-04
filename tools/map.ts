@@ -44,6 +44,7 @@ ground.paintAreas(survey.areas);
 const goals = ground.paintFields(survey.fields);
 ground.fillGaps();
 ground.paintDashes(survey.areas);
+ground.paintMarks(survey.marks, survey.stalls);
 const drawn = (p: P) => ground.at(p) !== 'outside';
 
 // 碰撞格（1 m）：物件、栅栏挡住的格子
@@ -450,6 +451,7 @@ const runs: number[] = [];
   runs.push(n);
 }
 
+ground.paintDetails(survey.areas);
 const chunks = ground.bake(new URL('../assets/ground/', import.meta.url));
 ground.minimap().save(new URL('../assets/minimap.png', import.meta.url));
 
