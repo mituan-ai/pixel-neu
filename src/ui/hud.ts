@@ -1,6 +1,6 @@
-// 游戏中的界面：顶栏（地点、天空条、在线人数）、右上小地图和工具、底栏（聊天、表情、菜单）、
+// 游戏中的界面：顶栏（地点、天空条、在线人数）、右上小地图（点开全图）和转视角、底栏（聊天、菜单）、
 // 访客横幅、触屏摇杆、地标卡、全图。具体面板在 chat.ts、login.ts、menu.ts、weather.ts 里。
-import { DISCUSS, EMOTES, PHRASES, type Channel, type ChatLine } from '../../shared/social.ts';
+import type { ChatLine } from '../../shared/social.ts';
 import { TILE } from '../../shared/world.ts';
 import { account } from '../account.ts';
 import { Atlas, type AtlasSource } from '../atlas.ts';
@@ -59,8 +59,6 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 export interface HudActions {
-  emote(i: number): void;
-  say(i: number): void;
   rotate(step: number): void;
   zoom(step: number): void;
   walkTo(x: number, y: number): boolean;
@@ -90,7 +88,6 @@ export class Hud {
   private readonly card = el('div', 'card box hidden');
   private readonly rideBtn: HTMLButtonElement;
   private readonly chatBtn: HTMLButtonElement;
-  private readonly pop = el('div', 'pop box hidden');
   private readonly atlas: Atlas;
   private readonly actions: HudActions;
   private readonly world: HudWorld;
@@ -126,10 +123,9 @@ export class Hud {
     mmBox.append(this.mm, this.north);
     mmBox.title = '打开全图（M）';
     mmBox.addEventListener('click', () => this.atlas.show());
+    // 缩放用滚轮、双指或 -/+，不放按钮
     const tools = el('div', 'tools');
     tools.append(
-      iconButton('zoom-out', '缩小（滚轮 / -）', () => actions.zoom(-1), ''),
-      iconButton('zoom-in', '放大（滚轮 / +）', () => actions.zoom(1), ''),
       iconButton('rotate-left', '向左转视角（Q）', () => actions.rotate(-1), ''),
       iconButton('rotate-right', '向右转视角（E）', () => actions.rotate(1), ''),
     );
@@ -140,41 +136,20 @@ export class Hud {
     this.chatBtn = button('', 'chat-open', () => chat.open(), 'chat');
     this.chatBtn.append(el('span', 'last', '说点什么…'));
     this.chatBtn.setAttribute('aria-label', '打开聊天（Enter）');
-    bar.append(
-      this.chatBtn,
-      iconButton('emote', '表情和短语', () => this.togglePop()),
-      iconButton('map', '全图（M）', () => this.atlas.toggle()),
-      iconButton('menu', '菜单', () => menu.open()),
-    );
+    bar.append(this.chatBtn, iconButton('menu', '菜单', () => menu.open()));
     chat.onLast = (l, n) => this.showLast(l, n);
-
-    // 表情和短语
-    const emotes = el('div', 'emote-row');
-    EMOTES.forEach((name, i) => {
-      const b = el('button', 'emote');
-      b.style.backgroundImage = 'url(emotes.png)';
-      b.style.backgroundPosition = `${-i * 36 + 2}px 2px`;
-      b.title = `${name}（${i + 1}）`;
-      b.setAttribute('aria-label', name);
-      b.addEventListener('click', () => this.act(() => actions.emote(i)));
-      emotes.append(b);
-    });
-    const phrases = el('div', 'phrase-list');
-    PHRASES.forEach((p, i) => phrases.append(button(p, 'small', () => this.act(() => actions.say(i)))));
-    this.pop.append(emotes, phrases);
 
     // 骑车：走到单车旁边才出现
     this.rideBtn = button('骑车', 'primary ride-btn hidden', () => actions.ride());
     this.rideBtn.title = '骑车 / 下车（R）';
 
     // 访客横幅
-    this.banner.append(el('span', '', '访客模式 · 别人看不到你'), button('登录', 'primary small', () => actions.login(), 'login'));
+    this.banner.append(el('span', '', '访客 · 别人看不到你'), button('登录', 'primary small', () => actions.login(), 'login'));
 
-    const credit = el('div', 'attribution', '© OpenStreetMap 贡献者 · 天气 Open-Meteo\n谜团 mituan · 非官方作品');
-    credit.style.whiteSpace = 'pre-line';
-    this.el.append(top, dock, this.card, this.banner, bar, this.rideBtn, this.pop, credit, this.atlas.el);
+    // 版权署名在「关于」和全图角上
+    this.el.append(top, dock, this.card, this.banner, bar, this.rideBtn, this.atlas.el);
     if (matchMedia('(pointer: coarse)').matches) this.el.append(this.joystick());
-    for (const e of [top, dock, bar, this.pop, this.card, this.banner, this.rideBtn]) e.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+    for (const e of [top, dock, bar, this.card, this.banner, this.rideBtn]) e.addEventListener('pointerdown', (ev) => ev.stopPropagation());
     this.bindKeys();
     this.refreshAccount();
   }
@@ -204,12 +179,6 @@ export class Hud {
     if (p.text) this.card.append(el('p', '', p.text));
     const src = p.src.split(',').map((s) => SOURCE_LABEL[s.trim()] ?? s.trim()).filter(Boolean);
     if (src.length) this.card.append(el('p', 'src', `资料：${src.join('、')}`));
-    const room = DISCUSS.find((d) => d.at.some((k) => p.name.includes(k)));
-    if (room) {
-      const a = el('div', 'card-actions');
-      a.append(button(`进入「${room.name}」讨论室`, 'small primary', () => this.chat.open(`room:${room.id}` as Channel), 'chat'));
-      this.card.append(a);
-    }
     this.place.textContent = p.name;
   }
 
@@ -217,25 +186,6 @@ export class Hud {
     // 视角 v 是屏幕上方的地理方向，地图要逆时针转 v 个 90°；「北」字跟着地图转
     this.mm.style.transform = `rotate(${-90 * v}deg)`;
     this.north.dataset.view = String(v);
-  }
-
-  setZoom(z: number): void {
-    toast(`缩放 ${z}×`, 800);
-  }
-
-  /** 访客点表情：提示登录 */
-  private act(fn: () => void): void {
-    if (!account.me) {
-      toast('登录后才能发表情和短语');
-      this.actions.login();
-      return;
-    }
-    fn();
-    this.pop.classList.add('hidden');
-  }
-
-  private togglePop(): void {
-    this.pop.classList.toggle('hidden');
   }
 
   private showLast(l: ChatLine | null, unread: number): void {
@@ -308,17 +258,13 @@ export class Hud {
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         if (!Sheet.closeAll()) this.atlas.hide();
-        this.pop.classList.add('hidden');
         return;
       }
       if (typing()) return;
-      const n = Number(e.key);
-      if (n >= 1 && n <= EMOTES.length) this.act(() => this.actions.emote(n - 1));
       if (e.key === 'Enter') {
         e.preventDefault();
         this.chat.open();
       }
-      if (e.key === 't' || e.key === 'T') this.togglePop();
       if (e.key === 'm' || e.key === 'M') this.atlas.toggle();
       if ((e.key === 'r' || e.key === 'R') && !this.rideBtn.classList.contains('hidden')) this.actions.ride();
       if (e.key === '-' || e.key === '_') this.actions.zoom(-1);

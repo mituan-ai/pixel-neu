@@ -113,7 +113,7 @@ export class CampusRoom extends Room<{ state: CampusState }> {
     [MSG.chat]: (client: Client, m: { ch?: unknown; text?: unknown }) => {
       const s = this.seen.get(client.sessionId);
       if (!s) return;
-      const r = hub.post(s.user, client.sessionId, m?.ch, m?.text);
+      const r = hub.post(s.user, client.sessionId, m?.ch, m?.text, Date.now(), new Set(this.clients.map((c) => c.sessionId)));
       if (typeof r === 'string') {
         if (r) client.send(EVENT.notice, { text: r });
         return;

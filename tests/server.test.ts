@@ -110,15 +110,17 @@ describe('聊天', () => {
     return { db, auth, sent, hub, inbox, peer };
   }
 
-  it('访客不能说话；新号只能在附近说；限频；敏感词', async () => {
+  it('访客不能说话；新号在广场说的降为附近、不能进讨论室；限频；敏感词', async () => {
     const { auth, sent, hub } = chat();
     const { user } = await login(auth, sent);
     const t0 = user.created;
     expect(hub.post(undefined, 's', 'near', 'hi')).toBe('登录后才能发言');
-    expect(hub.post(user, 's', 'square', 'hi', t0 + 1000)).toMatch('10 分钟');
-    const line = hub.post(user, 's', 'near', '有坏词', t0 + 1000);
+    expect(hub.post(user, 's', 'room:fresh', 'hi', t0 + 1000)).toMatch('10 分钟');
+    const down = hub.post(user, 's', 'square', 'hi', t0 + 1000);
+    expect(typeof down === 'object' && down.ch).toBe('near');
+    const line = hub.post(user, 's', 'near', '有坏词', t0 + 3500);
     expect(typeof line === 'object' && line.text).toBe('有＊＊');
-    expect(hub.post(user, 's', 'near', 'again', t0 + 1500)).toMatch('太快');
+    expect(hub.post(user, 's', 'near', 'again', t0 + 4000)).toMatch('太快');
     expect(typeof hub.post(user, 's', 'square', 'ok', t0 + CHAT.newbie + 1)).toBe('object');
   });
 
@@ -143,6 +145,10 @@ describe('聊天', () => {
     expect(hub.history(hub.peers.get('G')!, 'square')!.lines.length).toBe(2);
     hub.block(b, a.id, false);
     expect(db.blocked(b.id).size).toBe(0);
+    // 同一房间的人收到带 sid 的版本，能在头顶冒泡
+    hub.post(a, 'A', 'square', '同屋', t + 6000, new Set(['A', 'G']));
+    expect(inbox.get('G')!.at(-1)).toMatchObject({ text: '同屋', sid: 'A' });
+    expect(inbox.get('B')!.at(-1)).toMatchObject({ text: '同屋', sid: '' });
   });
 
   it('举报自己的消息无效，举报别人的进队列', async () => {

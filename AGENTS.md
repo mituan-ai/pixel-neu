@@ -76,8 +76,8 @@ node tools/codex.ts    把任务单交给 Codex：start / status / check / merge
 - 没登录是访客：只收状态，不进 `players`，别人看不到，不能发言，不占 40 人名额（每房间另有 60 个旁观位）。
 - 登录用手机号短信验证码（`server/auth.ts`），新号码自动注册。短信服务商在 `server/sms.ts` 按 `SMS_PROVIDER` 切换，没配就不开放登录；开发模式（`--dev`）验证码打印在服务端日志里。
 - 手机号只存加盐哈希（盐在 `PHONE_SALT`），令牌和验证码只存哈希。数据都在 `node:sqlite` 的库里（`DB_FILE`），聊天记录保留 6 个月。
-- 文字聊天分附近（40 m）、广场（跨房间）、讨论室三种频道：每条最多 80 字、2 秒一条，注册不满 10 分钟只能在附近说话；敏感词表在服务端本地（`BADWORDS_FILE`），不进仓库。可以举报、拉黑；管理员用 `node tools/admin.ts` 禁言、封号、删消息。
-- 预设短语和表情保留。`shared/social.ts` 里的短语、表情、讨论室只能追加到末尾：序号就是网络协议。
+- 界面上只有一个聊天（发到广场，跨房间；同房间的人头顶冒泡）：每条最多 80 字、2 秒一条，注册不满 10 分钟说的话降为附近（40 m）；敏感词表在服务端本地（`BADWORDS_FILE`），不进仓库。可以举报、拉黑；管理员用 `node tools/admin.ts` 禁言、封号、删消息。
+- 预设短语、表情、讨论室界面上不用了，服务端照收。`shared/social.ts` 里的短语、表情、讨论室只能追加到末尾：序号就是网络协议。
 - 聊天内容一律按纯文本显示（`textContent`），不拼 HTML。昵称经过 `cleanName`，消息经过 `cleanText`。
 - 改了收集什么数据、存多久，要同步改 `src/legal.ts` 的《隐私政策》。
 - 社群入口（QQ 群）在 `src/config.ts`，二维码放 `assets/community/`。
@@ -89,7 +89,7 @@ node tools/codex.ts    把任务单交给 Codex：start / status / check / merge
 - `art/` 子模块是公开仓库：原创素材按 CC-BY 4.0 发布，`art/chibi/` 的第三方部件是 CC0。只把别人能贡献的源文件放进去；代码、survey.json、`data/`、`art-inbox/` 草稿和参考照片都不进公开仓库。
 - 改 `art/` 先在子模块里提交、推送公开仓库，再在本仓库提交子模块指针。
 - 第三方素材只用 CC0、CC-BY、OGA-BY、CC-BY-SA 授权的，逐件登记到 `assets/CREDITS.md`。CC-BY-SA 素材及其改作按 CC-BY-SA 发布，不在保留权利范围内。
-- 界面写明「非官方作品」，右下角保留「© OpenStreetMap 贡献者」。不用校徽和学校官方标识，不暗示学校授权。
+- 加载页和「关于」写明「非官方作品」；「© OpenStreetMap 贡献者」写在「关于」和全图右下角，主界面不放署名。不用校徽和学校官方标识，不暗示学校授权。
 
 ## 提交前
 

@@ -93,14 +93,6 @@ export class Net {
     Object.assign(this.last, { x, y });
   }
 
-  emote(i: number): void {
-    this.room.send(MSG.emote, i);
-  }
-
-  say(i: number): void {
-    this.room.send(MSG.say, i);
-  }
-
   /** 骑上地图里编号为 id 的单车；0 是下车 */
   ride(id: number): void {
     this.room.send(MSG.ride, id);

@@ -100,7 +100,7 @@ async function boot(): Promise<void> {
       ...scene.handlers,
       chat: (l) => {
         chat.receive(l);
-        if (l.ch === 'near' && l.sid) scene.showChat(l.sid, l.text);
+        if (l.sid) scene.showChat(l.sid, l.text);
       },
       history: (ch, lines) => chat.history(ch, lines),
       notice: (t) => chat.system(t),
@@ -146,8 +146,6 @@ async function boot(): Promise<void> {
 
   hud = new Hud(
     {
-      emote: (i) => net?.emote(i),
-      say: (i) => net?.say(i),
       rotate: (step) => scene.rotate(step),
       zoom: (step) => scene.zoomBy(step),
       walkTo: (x, y) => scene.walkTo(x, y),
@@ -166,7 +164,6 @@ async function boot(): Promise<void> {
   );
   document.getElementById('ui')!.append(hud.el);
   scene.onView = (v) => hud?.setView(v);
-  scene.onZoom = (z) => hud?.setZoom(z);
   hud.setCount(Math.max(1, scene.dots().length));
   sky.apply(settings.value);
   settings.subscribe((s) => sky.apply(s));

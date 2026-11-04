@@ -51,30 +51,35 @@ export class ChatHub {
 
   /**
    * 校验并存库，返回要投递的消息，或者给发言人看的拒绝理由。
-   * 广场和讨论室由这里直接投递给所有房间；附近频道由调用方按距离投递。
+   * 广场和讨论室由这里直接投递给所有房间（local 是发言人所在房间的连接，他们收到带 sid 的版本，能在头顶冒泡）；
+   * 附近频道由调用方按距离投递。注册不满 10 分钟的人在广场说的话降为附近。
    */
-  post(user: User | undefined, sid: string, ch: unknown, raw: unknown, now = Date.now()): ChatLine | string {
+  post(user: User | undefined, sid: string, to: unknown, raw: unknown, now = Date.now(), local: ReadonlySet<string> = new Set()): ChatLine | string {
     if (!user) return '登录后才能发言';
-    if (!isChannel(ch)) return '没有这个频道';
+    if (!isChannel(to)) return '没有这个频道';
+    let ch: Channel = to;
     const fresh = this.db.user(user.id) ?? user;
     if (fresh.banned) return '账号已被封禁';
     if (fresh.mutedUntil > now) return `已被禁言，${new Date(fresh.mutedUntil).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })} 解除`;
-    if (ch !== 'near' && now - fresh.created < CHAT.newbie) return '注册满 10 分钟后才能在广场和讨论室发言，先在附近频道打个招呼吧';
+    if (ch !== 'near' && now - fresh.created < CHAT.newbie) {
+      if (ch !== 'square') return '注册满 10 分钟后才能在讨论室发言';
+      ch = 'near';
+    }
     const text = this.filter(cleanText(raw));
     if (!text) return '';
     if (now - (this.last.get(user.id) ?? 0) < CHAT.cooldown) return '说得太快了，歇一下';
     this.last.set(user.id, now);
     const id = this.db.addMessage(user.id, ch, fresh.name, text, now);
     const line: ChatLine = { id, ch, uid: user.id, sid, name: fresh.name, text, t: now };
-    if (ch !== 'near') this.deliver({ ...line, sid: '' }, [...this.peers.values()], sid);
+    if (ch !== 'near') this.deliver({ ...line, sid: '' }, [...this.peers.values()], sid, local);
     return line;
   }
 
-  /** 投递给一组连接，跳过互相屏蔽的；发言人自己收到带 sid 的版本（知道是自己说的） */
-  deliver(line: ChatLine, to: Iterable<Peer>, selfSid = line.sid): void {
+  /** 投递给一组连接，跳过互相屏蔽的；发言人自己和 local 里的连接收到带 sid 的版本（知道是谁说的） */
+  deliver(line: ChatLine, to: Iterable<Peer>, selfSid = line.sid, local: ReadonlySet<string> = new Set()): void {
     for (const p of to) {
       if (p.blocked.has(line.uid)) continue;
-      p.send('chat', p.sid === selfSid ? { ...line, sid: selfSid } : line);
+      p.send('chat', p.sid === selfSid || local.has(p.sid) ? { ...line, sid: selfSid } : line);
     }
   }
 

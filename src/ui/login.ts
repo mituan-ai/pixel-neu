@@ -14,7 +14,7 @@ export interface LoginDeps {
 export function loginSheet(deps: LoginDeps): Sheet {
   const sheet = new Sheet('登录 / 注册');
   const form = el('div', 'login-form');
-  form.append(el('p', '', '登录后别人才能看到你，也可以聊天、发表情。新号码第一次登录会自动注册。'));
+  form.append(el('p', '', '登录后别人才能看到你，也可以聊天。新号码第一次登录会自动注册。'));
 
   const phone = el('input', 'field');
   phone.type = 'tel';

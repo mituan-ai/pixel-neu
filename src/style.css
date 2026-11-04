@@ -88,8 +88,8 @@ textarea {
   border: 2px solid var(--ink);
   background: var(--paper);
   color: var(--ink);
-  padding: 6px 10px;
-  min-height: 36px;
+  padding: 4px 10px;
+  min-height: 32px;
   font-size: 14px;
   box-shadow: 0 2px 0 var(--ink);
   display: inline-flex;
@@ -127,8 +127,8 @@ textarea {
 }
 
 .btn.icon {
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   padding: 0;
 }
 
@@ -208,7 +208,7 @@ textarea {
   position: absolute;
   left: calc(var(--safe-l) + var(--gap));
   top: calc(var(--safe-t) + var(--gap));
-  right: calc(var(--safe-r) + 140px);
+  right: calc(var(--safe-r) + 124px);
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -221,8 +221,9 @@ textarea {
 }
 
 .place-chip {
-  font-size: 14px;
-  padding: 4px 8px;
+  font-size: 13px;
+  padding: 2px 8px;
+  min-height: 28px;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -232,17 +233,13 @@ textarea {
 .sky-chip {
   cursor: pointer;
   padding: 2px 8px 2px 4px;
-  min-height: 30px;
-}
-
-.sky-arc {
-  width: 48px;
-  height: 18px;
-  image-rendering: pixelated;
+  min-height: 28px;
+  font: inherit;
+  color: inherit;
 }
 
 .count-chip {
-  min-height: 30px;
+  min-height: 28px;
 }
 
 .dev-badge {
@@ -262,8 +259,8 @@ textarea {
 
 .minimap-box {
   position: relative;
-  width: 124px;
-  height: 124px;
+  width: 108px;
+  height: 108px;
   overflow: hidden;
   cursor: pointer;
   background: #8fd18b;
@@ -273,8 +270,8 @@ textarea {
 
 .minimap {
   position: absolute;
-  left: 0;
-  top: 0;
+  left: -8px;
+  top: -8px;
   width: 120px;
   height: 120px;
   image-rendering: pixelated;
@@ -315,18 +312,14 @@ textarea {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 4px;
-  width: 124px;
+  width: 108px;
 }
 
 .tools .btn {
-  width: 38px;
-  height: 34px;
+  width: 30px;
+  height: 28px;
   min-height: 0;
   padding: 0;
-}
-
-.zoom-label {
-  font-size: 12px;
 }
 
 /* 底栏 */
@@ -349,7 +342,7 @@ textarea {
   flex: 1;
   justify-content: flex-start;
   color: var(--muted);
-  min-height: 44px;
+  min-height: 36px;
   overflow: hidden;
 }
 
@@ -373,9 +366,9 @@ textarea {
 .ride-btn {
   position: absolute;
   right: calc(var(--safe-r) + var(--gap));
-  bottom: calc(var(--safe-b) + 104px);
-  min-height: 44px;
-  padding: 0 16px;
+  bottom: calc(var(--safe-b) + 56px);
+  min-height: 36px;
+  padding: 0 14px;
 }
 
 /* 访客横幅 */
@@ -422,49 +415,6 @@ textarea {
   background: var(--paper);
   border: 2px solid var(--ink);
   box-shadow: 0 2px 0 var(--ink);
-}
-
-/* 表情与短语的弹出框 */
-.pop {
-  position: absolute;
-  right: calc(var(--safe-r) + var(--gap));
-  bottom: calc(var(--safe-b) + 60px);
-  width: min(320px, calc(100% - 16px));
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.emote-row {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.emote {
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  background-color: #fff;
-  background-repeat: no-repeat;
-  background-size: auto 36px;
-  background-origin: content-box;
-  border: 2px solid var(--ink);
-  box-shadow: 0 2px 0 var(--ink);
-  image-rendering: pixelated;
-  cursor: pointer;
-}
-
-.emote:active {
-  transform: translateY(2px);
-  box-shadow: none;
-}
-
-.phrase-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
 }
 
 /* 地标卡 */
@@ -520,18 +470,6 @@ textarea {
   line-height: 1.5;
   z-index: 40;
   pointer-events: none !important;
-}
-
-/* 版权署名：右下角常驻 */
-.attribution {
-  position: absolute;
-  right: calc(var(--safe-r) + 4px);
-  bottom: calc(var(--safe-b) + 58px);
-  font-size: 12px;
-  color: #fff;
-  text-shadow: 0 1px 0 var(--ink), 1px 0 0 var(--ink), -1px 0 0 var(--ink), 0 -1px 0 var(--ink);
-  pointer-events: none !important;
-  text-align: right;
 }
 
 /* ---------- 面板：竖屏是底部抽屉，横屏和桌面是侧栏 ---------- */
@@ -785,40 +723,6 @@ textarea {
   flex: 1;
 }
 
-.tabs {
-  display: flex;
-  gap: 4px;
-  padding: 6px 8px 0;
-  overflow-x: auto;
-  flex: none;
-  border-bottom: 2px solid var(--ink);
-  touch-action: pan-x;
-}
-
-.tab {
-  border: 2px solid var(--ink);
-  border-bottom: none;
-  background: var(--cream);
-  padding: 4px 10px;
-  cursor: pointer;
-  white-space: nowrap;
-  position: relative;
-  top: 2px;
-}
-
-.tab.on {
-  background: var(--paper);
-  padding-bottom: 6px;
-  color: var(--blue-dark);
-}
-
-.tab .n {
-  margin-left: 4px;
-  background: var(--red);
-  color: #fff;
-  padding: 0 3px;
-}
-
 .lines {
   flex: 1;
   min-height: 120px;
@@ -985,42 +889,14 @@ textarea {
 }
 
 .atlas-frame {
+  position: relative;
   width: 100%;
   height: 100%;
   max-width: 1280px;
-  display: flex;
-  flex-direction: column;
   background: var(--paper);
   color: var(--ink);
   border: 2px solid var(--ink);
   box-shadow: 0 4px 0 var(--ink);
-}
-
-.atlas-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 6px 8px;
-  border-bottom: 2px solid var(--ink);
-}
-
-.atlas-title {
-  font-size: 16px;
-  color: var(--blue-dark);
-  white-space: nowrap;
-}
-
-.atlas-hint {
-  flex: 1;
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.atlas-tools {
-  display: flex;
-  gap: 4px;
 }
 
 .icon-btn {
@@ -1037,80 +913,49 @@ textarea {
   box-shadow: none;
 }
 
-.atlas-tools .icon-btn {
-  width: 34px;
-  height: 32px;
-  font-size: 14px;
-}
-
-.atlas-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-}
-
 .atlas-map {
-  flex: 1;
-  min-width: 0;
+  display: block;
+  width: 100%;
   height: 100%;
   cursor: crosshair;
   touch-action: none;
   image-rendering: pixelated;
 }
 
-.atlas-list {
-  width: 150px;
-  flex: none;
-  overflow: auto;
-  border-left: 2px solid var(--ink);
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  touch-action: pan-y;
+.atlas-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  font-size: 14px;
 }
 
-.atlas-list-title {
-  color: var(--blue-dark);
-  margin-bottom: 2px;
+.atlas-credit {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  font-size: 12px;
+  color: #fff;
+  text-shadow: 0 1px 0 var(--ink), 1px 0 0 var(--ink), -1px 0 0 var(--ink), 0 -1px 0 var(--ink);
+  pointer-events: none;
 }
 
-.atlas-item {
-  text-align: left;
-  background: #fff;
-  border: 2px solid var(--ink);
-  padding: 4px 6px;
-  cursor: pointer;
-}
-
-.atlas-item:hover {
-  background: var(--orange);
+/* 触屏：按钮留够手指点的大小 */
+@media (pointer: coarse) {
+  .btn.icon {
+    width: 40px;
+    height: 40px;
+  }
+  .chat-open {
+    min-height: 40px;
+  }
 }
 
 /* ---------- 竖屏手机 ---------- */
 @media (max-width: 600px) {
   .atlas {
     padding: calc(var(--safe-t) + 6px) 6px calc(var(--safe-b) + 6px);
-  }
-  .atlas-hint {
-    display: none;
-  }
-  .atlas-body {
-    flex-direction: column;
-  }
-  .atlas-list {
-    width: auto;
-    flex-direction: row;
-    overflow-x: auto;
-    border-left: none;
-    border-top: 2px solid var(--ink);
-    touch-action: pan-x;
-  }
-  .atlas-list-title {
-    display: none;
-  }
-  .atlas-item {
-    white-space: nowrap;
   }
   .minimap-box {
     width: 92px;
@@ -1125,7 +970,7 @@ textarea {
   }
   .tools .btn {
     width: 44px;
-    height: 36px;
+    height: 32px;
   }
   .topbar {
     right: calc(var(--safe-r) + 108px);
@@ -1142,8 +987,12 @@ textarea {
     font-size: 14px;
     padding-right: 28px;
   }
-  .attribution {
-    bottom: calc(var(--safe-b) + 104px);
+  /* 手机上卡片只留名字和介绍，出处在桌面上看 */
+  .card p {
+    line-height: 1.5;
+  }
+  .card .src {
+    display: none;
   }
   .editor {
     flex-direction: column;
@@ -1181,10 +1030,6 @@ textarea {
     right: calc(var(--safe-r) + var(--gap));
     transform: none;
     bottom: calc(var(--safe-b) + 80px);
-  }
-  .pop {
-    left: calc(var(--safe-l) + var(--gap));
-    right: auto;
   }
   /* 侧栏在左边，地标卡挪到右边小地图左侧 */
   .card {
@@ -1225,10 +1070,6 @@ textarea {
   .sheet {
     top: calc(var(--safe-t) + 44px);
     bottom: calc(var(--safe-b) + 56px);
-  }
-  .attribution {
-    bottom: calc(var(--safe-b) + 2px);
-    right: calc(var(--safe-r) + 108px);
   }
 }
 

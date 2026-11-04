@@ -73,7 +73,11 @@ export const ZOOM_MIN = 1;
 export const ZOOM_MAX = 4;
 const ZOOM_KEY = 'pixel-neu-zoom';
 /** 滚轮连续滚动时，两次缩放至少隔这么久（毫秒），触控板一划不会直接跳到头 */
-const WHEEL_GAP = 160;
+const WHEEL_GAP = 220;
+/** 滚轮累计多少才缩放一档：鼠标滚一格约 100，触控板一次只有几到几十，攒够了才动 */
+const WHEEL_STEP = 80;
+/** 缩放过渡（毫秒）：从一个整数倍平滑过到下一个，停下时仍是整数倍 */
+const ZOOM_TWEEN = 140;
 /** 静态物件按这么大的方块（屏幕像素）判断在不在视野附近；物件一多，留在显示列表里的每帧都要排序、遍历 */
 const CHUNK = 512;
 /** 双指捏合到这个比例缩放一档，拧过这个角度转一次视角 */
@@ -159,11 +163,10 @@ export class CampusScene extends Phaser.Scene {
   /** 玩家用滚轮或按钮选的缩放倍数；null 时按屏幕大小取默认 */
   private userZoom: number | null = loadZoom();
   private lastWheel = 0;
+  private wheelAcc = 0;
   /** 点击行走的终点标记；ghost 是被楼挡住时透出来的半透明那份 */
   private dest!: Phaser.GameObjects.Image;
   private destGhost!: Phaser.GameObjects.Image;
-  /** 缩放倍数变了：界面显示当前倍数 */
-  onZoom?: (zoom: number) => void;
 
   constructor(map: TiledMap, hooks: SceneHooks) {
     super('campus');
@@ -285,9 +288,14 @@ export class CampusScene extends Phaser.Scene {
     });
     // 滚轮缩放
     this.input.on('wheel', (_p: Phaser.Input.Pointer, _over: unknown, _dx: number, dy: number) => {
-      if (!dy || this.time.now - this.lastWheel < WHEEL_GAP) return;
+      if (!dy) return;
+      // 换了方向就重新攒
+      if (Math.sign(dy) !== Math.sign(this.wheelAcc)) this.wheelAcc = 0;
+      this.wheelAcc += dy;
+      if (Math.abs(this.wheelAcc) < WHEEL_STEP || this.time.now - this.lastWheel < WHEEL_GAP) return;
       this.lastWheel = this.time.now;
-      this.zoomBy(dy < 0 ? 1 : -1);
+      this.zoomBy(this.wheelAcc < 0 ? 1 : -1);
+      this.wheelAcc = 0;
     });
     // Q、E 转视角（字母键不拦截，输入框里照常打字）
     kb.on('keydown-Q', () => this.rotate(-1));
@@ -420,18 +428,19 @@ export class CampusScene extends Phaser.Scene {
     return this.cameras.main.zoom;
   }
 
-  /** 缩放：+1 放大一倍、-1 缩小一倍，限在 ZOOM_MIN–ZOOM_MAX */
+  /** 缩放：+1 放大一档、-1 缩小一档（整数倍），限在 ZOOM_MIN–ZOOM_MAX，中间平滑过渡 */
   zoomBy(step: number): void {
-    const z = Phaser.Math.Clamp(this.cameras.main.zoom + step, ZOOM_MIN, ZOOM_MAX);
-    if (z === this.cameras.main.zoom) return;
+    const cam = this.cameras.main;
+    const from = this.userZoom ?? Math.round(cam.zoom);
+    const z = Phaser.Math.Clamp(from + step, ZOOM_MIN, ZOOM_MAX);
+    if (z === from) return;
     this.userZoom = z;
     try {
       localStorage.setItem(ZOOM_KEY, String(z));
     } catch {
       /* 存不了下次就用默认倍数 */
     }
-    this.applyZoom();
-    this.onZoom?.(z);
+    cam.zoomTo(z, ZOOM_TWEEN, 'Sine.easeOut', true);
   }
 
   get mapSize(): { w: number; h: number } {

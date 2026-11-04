@@ -1,4 +1,5 @@
 // 全图：铺满屏幕的整张校园地图，固定上北。滚轮或双指缩放、拖动平移，点地图上的地方或地标名就走过去。
+// 只有地图本身和右上角的关闭按钮；OpenStreetMap 署名写在右下角。
 // 底图和小地图共用一张（每格一个像素），这里只按当前缩放放大绘制，再叠上地标、玩家和终点。
 import { TILE } from '../shared/world.ts';
 import { PIXEL_FONT } from './scene.ts';
@@ -26,7 +27,6 @@ const CLICK_SLOP = 5;
 export class Atlas {
   readonly el: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
-  private readonly list: HTMLElement;
   private scale = 1;
   private ox = 0;
   private oy = 0;
@@ -47,28 +47,12 @@ export class Atlas {
     this.actions = actions;
     this.el = el('div', 'atlas hidden');
     const frame = el('div', 'atlas-frame');
-    const head = el('div', 'atlas-head');
-    const title = el('div', 'atlas-title', '南湖校区全图');
-    const hint = el('div', 'atlas-hint', '滚轮缩放 · 拖动平移 · 点地图上的地方走过去');
-    const tools = el('div', 'atlas-tools');
-    const btn = (label: string, tip: string, fn: () => void) => {
-      const b = el('button', 'icon-btn', label);
-      b.title = tip;
-      b.setAttribute('aria-label', tip);
-      b.addEventListener('click', fn);
-      tools.append(b);
-    };
-    btn('－', '缩小', () => this.zoomAt(1 / 1.5));
-    btn('＋', '放大', () => this.zoomAt(1.5));
-    btn('◎', '回到自己', () => this.centerSelf());
-    btn('▣', '看全图', () => this.fitAll());
-    btn('✕', '关闭（M / Esc）', () => this.hide());
-    head.append(title, hint, tools);
-    const body = el('div', 'atlas-body');
     this.canvas = el('canvas', 'atlas-map');
-    this.list = el('div', 'atlas-list');
-    body.append(this.canvas, this.list);
-    frame.append(head, body);
+    const close = el('button', 'icon-btn atlas-close', '✕');
+    close.title = '关闭（M / Esc）';
+    close.setAttribute('aria-label', '关闭全图');
+    close.addEventListener('click', () => this.hide());
+    frame.append(this.canvas, close, el('div', 'atlas-credit', '© OpenStreetMap 贡献者'));
     this.el.append(frame);
     // 点背板空白处关闭
     this.el.addEventListener('pointerdown', (e) => e.target === this.el && this.hide());
@@ -81,7 +65,6 @@ export class Atlas {
 
   show(): void {
     this.el.classList.remove('hidden');
-    this.buildList();
     this.resize();
     this.fitAll();
     // 打开时先看全图，再拉近到自己附近，一眼看到自己在哪
@@ -103,16 +86,6 @@ export class Atlas {
   toggle(): void {
     if (this.open) this.hide();
     else this.show();
-  }
-
-  private buildList(): void {
-    this.list.replaceChildren(el('div', 'atlas-list-title', '地标'));
-    for (const l of [...this.src.landmarks].sort((a, b) => a.y - b.y)) {
-      const b = el('button', 'atlas-item', l.name);
-      b.title = `走到${l.name}`;
-      b.addEventListener('click', () => this.go(l.x, l.y, l.name));
-      this.list.append(b);
-    }
   }
 
   private resize(): void {
