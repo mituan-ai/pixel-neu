@@ -2,7 +2,7 @@
   "buildings": {
     "87664782": {"storeys":1,"roof":"dome","rise":12,"name":"游泳馆","src":"S1,S33,R-bld-09","look":"hall","tweak":{"windows":"none"}},
     "87664796": {"storeys":2,"parts":[{"circle":[-191,503,12],"storeys":4}],"name":"汉卿会堂","src":"S1,S30,S36"},
-    "87664797": {"lean":[-7.5,0],"storeys":5,"name":"信息学馆","src":"S1,S9,S10,S30,R-north-01,R-north-02"},
+    "87664797": {"lean":[-7.5,0],"storeys":5,"name":"信息学馆","src":"S1,S9,S10,S30,R-north-01,R-north-02,S60,R-vid-01"},
     "87664798": {"lean":[-7.5,0],"shift":[1.75,0],"name":"宁恩承图书馆","src":"S1,S6,S30"},
     "108407948": {"storeys":4,"name":"综合楼","src":"S1,S30"},
     "108409761": {"storeys":4,"shift":[1.5,0],"name":"学生活动中心","src":"S1,S30"},
