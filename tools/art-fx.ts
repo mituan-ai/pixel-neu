@@ -1,4 +1,4 @@
-// 光照和天气特效：尺寸和画法见 docs/codex/TASK-09-light.md。
+// 光照和天气特效：窗灯蒙版、路灯光斑、雨丝、水花和雪花。
 import { FX } from '../shared/fx.ts';
 import { Pix, type Sprite } from './pix.ts';
 

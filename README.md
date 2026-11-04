@@ -6,9 +6,10 @@
 
 ## 玩法
 
-- 方向键 / WASD 走路，点地面自动寻路
-- `1`–`6` 发表情，`T` 选预设短语，`M` 开关小地图
-- 不用注册，没有自由聊天
+- 方向键 / WASD 走路，点地面自动寻路；`Q` / `E` 转视角，`-` / `+` 或滚轮缩放
+- `1`–`6` 发表情，`T` 选预设短语，`Enter` 打字聊天，`M` 开关全图
+- 走到自行车或共享单车旁按 `R` 骑车
+- 不登录也能逛（访客别人看不到）；手机号验证码登录后才能出现在地图上、说话
 - 一个校园最多 40 人，满了自动分到新的「平行校园」
 
 ## 运行
@@ -32,6 +33,8 @@ npm run dev      # 前端
 | 地图 | `/srv/pixel-neu/assets/map.json`，由服务单元里的 `MAP_FILE` 指定 |
 | nginx | `sites-available/pixel-neu.conf` + `snippets/pixel-neu-site.conf`；`/colyseus/` 反代到 8790 并去掉前缀 |
 | 证书 | Let's Encrypt，webroot `/var/www/acme`，certbot 自动续期 |
+
+环境变量和上线步骤见 [docs/deploy.md](docs/deploy.md)。
 
 更新：`npm run build` → `dist/` 同步到网页目录，`dist-server/` 同步到 `/srv/pixel-neu/server/`；地图变了再复制 `assets/map.json` → `systemctl restart pixel-neu`。
 

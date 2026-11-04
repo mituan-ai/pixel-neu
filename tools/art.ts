@@ -644,7 +644,7 @@ const buildingArt = new Map<string, Pix>();
   mkdirSync(new URL('../data/', import.meta.url), { recursive: true });
   pv.save(new URL('../data/preview.png', import.meta.url));
 
-  // TASK-09：北门到信息学馆，世界米坐标 x 60–210、y −20–120。
+  // 夜景对照图：北门到信息学馆，世界米坐标 x 60–210、y −20–120。
   const { EXTENT } = await import('./geo.ts');
   const x0 = (60 - EXTENT.x0) * PPM, y0 = (-20 - EXTENT.y0) * PPM;
   const night = new Pix(150 * PPM, 140 * PPM), windows = new Pix(night.w, night.h);

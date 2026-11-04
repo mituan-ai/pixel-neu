@@ -3,7 +3,7 @@ import { ICONS } from '../shared/icons.ts';
 import type { IconName } from '../shared/icons.ts';
 import { SITE, moonPhase, moonPosition, moonTimes, sunPosition, sunTimes, weatherIcon, weatherText } from '../shared/sky.ts';
 
-// TASK-13 的 PyEphem 4.2.1 基准，时间均为北京时间。
+// PyEphem 4.2.1 算的基准，时间均为北京时间。
 const solarDays = [
   { day: '2026-03-20', rise: '05:50', set: '17:58' },
   { day: '2026-06-21', rise: '04:12', set: '19:25' },
