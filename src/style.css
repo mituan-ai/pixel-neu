@@ -143,7 +143,7 @@ textarea {
   flex: none;
   width: 16px;
   height: 16px;
-  background-image: url(ui.png);
+  background-image: url(/ui.png);
   background-repeat: no-repeat;
   background-size: 1024px 24px;
   image-rendering: pixelated;
