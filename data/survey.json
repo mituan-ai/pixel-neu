@@ -1154,7 +1154,8 @@
     {"at":[-194,979],"facing":"S","main":true,"canopy":"none"},
     {"at":[416,856],"facing":"S","main":true,"canopy":"none"},
     {"at":[479,876],"facing":"S","main":true,"canopy":"none"},
-    {"at":[-42,350],"facing":"S","main":true,"canopy":"none"}
+    {"at":[-42,350],"facing":"S","main":true,"canopy":"none"},
+    {"at":[-440,582.5],"facing":"N","main":true,"canopy":"slab"}
   ],
   "bikeRacks": [
     {"from":[-329,858],"to":[-315,858],"covered":true},
