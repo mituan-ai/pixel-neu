@@ -26,6 +26,7 @@
     "art": "node tools/art.ts",
     "sat": "node tools/sat.ts",
     "check": "node tools/check.ts",
+    "compare": "node tools/compare.ts",
     "parallax": "node tools/parallax.ts"
   },
   "dependencies": {
