@@ -50,7 +50,7 @@ npm run typecheck  类型检查
 npm run osm        重新抓 OSM 到 data/osm.json
 npm run sat        抓卫星图到 data/sat-<来源>.png（-- 来源，见 tools/geo.ts）
 npm run check      对照图 data/check.png（-- [来源] x0 y0 x1 y1 每米像素）
-npm run compare    生成结果和卫星图左右并排 data/compare.png（-- x0 y0 x1 y1 [每米像素] [来源]），审查描图用
+npm run compare    生成结果和卫星图左右并排 data/compare.png（-- [--ground] x0 y0 x1 y1 [每米像素] [来源]；--ground 只看地面，跑过 map 就能用），审查描图用
 npm run parallax   两期卫星图视差测楼高和楼基，输出建议值和 data/parallax.png（-- x0 y0 x1 y1）
 npm run map        生成 assets/map.json、地面分块 assets/ground/ 和小地图 assets/minimap.png
 npm run art        生成美术，并输出 data/preview.png
