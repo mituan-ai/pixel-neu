@@ -1,7 +1,7 @@
 // 对比图：生成结果（data/preview.png，npm run art 拼的全图）和卫星图按世界坐标左右并排，用来审查描图和画面。
 // 用法：npm run compare -- x0 y0 x1 y1 [每米像素] [来源]   范围是世界米坐标；每米像素默认 2；来源见 geo.ts 的 SAT_SOURCES
 // 输出 data/compare.png。每米像素低于原图时按块平均缩小，高于时最近邻放大；两边每 50 m 一条网格线。
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { EXTENT, SAT_PPM, SAT_SOURCES } from './geo.ts';
 import { decodePNG, encodePNG } from './pix.ts';
 import { PPM } from './shape.ts';
@@ -40,7 +40,9 @@ function blit(src: { w: number; h: number; data: Uint8ClampedArray }, k: number,
     for (let x = 0; x < W; x++) img.set([255, 255, 0, 255], (Math.round((g - y0) * ppm) * (W * 2 + GAP) + ox + x) * 4);
 }
 
-blit(decodePNG(readFileSync(new URL('../data/preview.png', import.meta.url))), PPM, 0);
+const preview = new URL('../data/preview.png', import.meta.url);
+if (!existsSync(preview)) throw new Error('没有 data/preview.png：先跑 npm run map && npm run art');
+blit(decodePNG(readFileSync(preview)), PPM, 0);
 blit(decodePNG(readFileSync(new URL(`../data/sat-${source}.png`, import.meta.url))), SAT_PPM, W + GAP);
 writeFileSync(new URL('../data/compare.png', import.meta.url), encodePNG(W * 2 + GAP, H, img));
 console.log(`data/compare.png：左生成结果、右卫星图 ${source}；x ${x0}–${x1}，y ${y0}–${y1}，每米 ${ppm} 像素，网格 50 m`);
