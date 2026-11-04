@@ -1,18 +1,43 @@
 // 楼型样张：不跑整套 npm run art，快速看楼型、特色构件和单栋楼。输出 data/looks-sheet.png（放大 2 倍，不进仓库）。
 //   node tools/looks.ts            每个楼型一栋 24 × 14 m 的样楼（南、北两面），再加一栋构件和门头的示范楼、两栋坡屋顶
 //   node tools/looks.ts 87664797 -3  这几栋楼（OSM 编号；survey 补描的楼写负数）四个视角，从左到右 N E S W
+//   node tools/looks.ts --list [y0 y1]  列出校内的楼（中心在校界内），可只列中心 y 在 y0–y1 米之间的：编号、名字、中心、占地、层数、楼型、构件和门数
 import { VIEWS } from '../shared/view.ts';
 import { drawBuilding } from './art-building.ts';
 import { levelPx, loadBuildings, type BuildingModel } from './buildings.ts';
 import { LOOKS } from './facades.ts';
 import { EXTENT, toWorld } from './geo.ts';
 import { Pix } from './pix.ts';
-import { PPM } from './shape.ts';
+import { PPM, inPoly } from './shape.ts';
 import { loadSurvey, type Feature, type Survey } from './survey.ts';
 import { readFileSync } from 'node:fs';
 
-const ids = process.argv.slice(2).map(Number);
+const args = process.argv.slice(2);
 const rows: Pix[][] = [];
+
+/** 全部楼的模型（和地图、美术工具算的同一份） */
+function models(): BuildingModel[] {
+  const osm = JSON.parse(readFileSync(new URL('../data/osm.json', import.meta.url), 'utf8'));
+  const gate = osm.elements.find((e: { tags: Record<string, string> }) => e.tags.name === '北门');
+  return loadBuildings(osm, loadSurvey(), toWorld(gate.lat, gate.lon)[0]);
+}
+
+if (args[0] === '--list') {
+  const osm = JSON.parse(readFileSync(new URL('../data/osm.json', import.meta.url), 'utf8'));
+  // 校界：OSM way 53573481
+  const fence = osm.elements.find((e: { id: number }) => e.id === 53573481).geometry.map((g: { lat: number; lon: number }) => toWorld(g.lat, g.lon));
+  const [y0, y1] = [Number(args[1] ?? -Infinity), Number(args[2] ?? Infinity)];
+  const list = models()
+    .map((b) => ({ b, c: [EXTENT.x0 + (b.x + b.w / 2) / PPM, EXTENT.y0 + (b.y + b.h / 2) / PPM] as [number, number] }))
+    .filter(({ c }) => inPoly(c, fence) && c[1] >= y0 && c[1] < y1)
+    .sort((a, b) => a.c[1] - b.c[1] || a.c[0] - b.c[0]);
+  console.log('| 编号 | 名字 | 中心 x, y | 占地 m | 层数 | 楼型 | 构件 | 门 |\n|---|---|---|---|---|---|---|---|');
+  for (const { b, c } of list)
+    console.log(`| ${b.id} | ${b.name} | ${Math.round(c[0])}, ${Math.round(c[1])} | ${Math.round(b.w / PPM)}×${Math.round(b.h / PPM)} | ${Math.round((b.parts[0].wall - 7) / 30)} | ${b.look} | ${b.features.length} | ${b.doors.length} |`);
+  console.log(`共 ${list.length} 栋`);
+  process.exit(0);
+}
+const ids = args.map(Number);
 
 /** 一栋放在世界原点附近的矩形样楼：w × d 米，storeys 层 */
 function sample(look: string, w: number, d: number, storeys: number, extra: Partial<BuildingModel> = {}): BuildingModel {
@@ -26,9 +51,7 @@ function sample(look: string, w: number, d: number, storeys: number, extra: Part
 const at = (x: number, y: number): [number, number] => [EXTENT.x0 + x, EXTENT.y0 + y];
 
 if (ids.length) {
-  const osm = JSON.parse(readFileSync(new URL('../data/osm.json', import.meta.url), 'utf8'));
-  const gate = osm.elements.find((e: { tags: Record<string, string> }) => e.tags.name === '北门');
-  const all = loadBuildings(osm, loadSurvey(), toWorld(gate.lat, gate.lon)[0]);
+  const all = models();
   for (const id of ids) {
     const b = all.find((m) => m.id === id);
     if (!b) throw new Error(`没有楼 ${id}（可能被 drop 了，或者不在 EXTENT 里）`);

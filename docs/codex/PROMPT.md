@@ -1,6 +1,14 @@
 # 给 Codex 的通用提示词
 
-用法：把下面「提示词」整段发给 Codex，末尾换成具体任务单的路径（`docs/codex/TASK-*.md`）。任务单按本文件最后的模板写。
+## 协作流程
+
+1. 维护者（Claude）写任务单 `docs/codex/TASK-NN-<名字>.md`（按本文件最后的模板），提交到 main。
+2. `node tools/codex.ts start TASK-NN`：在仓库旁边的 `pixel-neu-codex/TASK-NN/` 建 worktree（分支 `codex/TASK-NN`），后台跑 `codex exec`，提示词就是下面「提示词」一节。几张互不冲突的任务单可以同时跑。
+3. `node tools/codex.ts status` 看进度和 Codex 的回复；跑完后 `node tools/codex.ts check TASK-NN` 跑类型检查和测试、列出改动。
+4. 维护者审改动、看样张和预览图。要返工就在 worktree 里改，或者 drop 掉改任务单重跑；通过就 `node tools/codex.ts merge TASK-NN`，再 `npm run map && npm run art && npm test`，提交生成产物。
+5. 任务单做完后删掉（git 历史里有）；里面以后还要用的规则并进 `docs/mapping.md` 或代码注释。
+
+手动用也行：把「提示词」整段发给 Codex，`<任务单路径>` 换成任务单的路径。
 
 ---
 
@@ -38,9 +46,17 @@
 - 不写总结文档、审查报告、CHANGELOG 或 TODO 清单；要记的东西只写进 `docs/sources.md`。
 - 不装依赖，不升级依赖。
 - 不重构、不抽公共函数、不改已有函数的签名。确实绕不过去时，在回复里说明，不要自己改。
-- 不提交 git，不推送，不部署。
+- 在当前分支上提交（提交信息用中文，一个任务一到几个提交），不推送，不合并，不部署。
+- 不提交生成产物：`assets/` 下 `npm run map`、`npm run art` 生成的文件（`map.json`、`ground/`、`buildings/`、图集等）和 `art/palette.gpl`。可以生成出来自己看，提交前 `git checkout -- assets art` 还原。
 - 不读、不打印、不写入 `.env.local` 里的密钥。需要时通过环境变量用。
 - 不把照片、卫星图放进仓库。它们只能在 `data/` 下的本地文件里。
+
+**查资料的任务：**
+
+- 可以上网搜（学校官网、新闻、百科、地图街景说明、公开的照片和视频）。每条用到的资料先在 `docs/sources.md` 登记 S 号（或在 `docs/refs/` 对应文件登记 R 号）：链接、标题、发布日期、看到了什么。
+- 照片可以下载到 `data/ref/<区域>/` 自己看，不进仓库。
+- 资料互相矛盾、或者只有一个来源的，按最可靠的写，另一说法记进「待核实」。
+- 找不到资料的楼保持现状（中性立面、无名），不要猜。
 
 遇到任务单没说清的地方，按最保守的理解做最小的改动，并在回复的「推断」一段里写明。
 
@@ -75,7 +91,7 @@
 <要写入的 JSON 或代码片段的样例，照抄格式>
 
 ## 验收
-- [ ] `npm run map && npm run art && npm run typecheck && npm test` 全部通过
+- [ ] `npm run map && npm run art && npm run typecheck && npm test` 全部通过（楼型任务可以先用 `node tools/looks.ts <楼编号>` 快速看）
 - [ ] <画面检查：对照图或 preview.png 上应该看到什么>
 - [ ] <数据检查：比如 survey.json 新面数、物件个数>
 ```
