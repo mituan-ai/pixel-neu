@@ -30,12 +30,15 @@ Node 要 22.5 以上（`node:sqlite`）。启动时会打印一行 SQLite 实验
 
 ## 上线步骤
 
-1. `npm run build`，`dist/` 同步到网页目录，`dist-server/` 同步到 `/srv/pixel-neu/server/`；地图变了再复制 `assets/map.json`。
-2. 建库目录：`mkdir -p /srv/pixel-neu/data && chown pixelneu /srv/pixel-neu/data`。
-3. 在 `pixel-neu.service` 的 `[Service]` 里加 `Environment=PHONE_SALT=…`、`Environment=DB_FILE=/srv/pixel-neu/data/pixel-neu.db`、`Environment=SMS_PROVIDER=aliyun` 和上面四个 `ALIYUN_*`（也可以写进只有 root 可读的 `EnvironmentFile=`），`systemctl daemon-reload && systemctl restart pixel-neu`。
-4. 登录接口走现有的 `/colyseus/` 反代（`/colyseus/api/...`）。短信和接口的限额按客户端 IP 计，服务端取 `X-Real-IP`，所以这个 location 里必须有 `proxy_set_header X-Real-IP $remote_addr;`（覆盖客户端自己带的头），否则别人伪造这个头就能绕过限额。
-5. 网页目录开 gzip，类型至少包括 `application/json`、`application/javascript`、`text/css`：map.json 原样 1.6 MB，压缩后约 145 KB，首屏总传输约 2 MB。
-6. 数据库每天备份一次，例如 cron：`sqlite3 /srv/pixel-neu/data/pixel-neu.db ".backup /srv/pixel-neu/backup/db-$(date +\%F).db"`，保留 30 天。
+线上已按下面配好（2026-11-03），以后更新只需第 1 步加重启服务。
+
+1. `npm run build`，`dist/` 打包上传到网页目录，`dist-server/` 到 `/srv/pixel-neu/server/`，旧版本改名 `.old` 留着回滚；地图变了再复制 `map.json` 到 `/srv/pixel-neu/assets/`。服务器没有 rsync，用 `tar czf - -C dist . | ssh … 'tar xzf - -C <目录>.new'` 再换目录。
+2. 密钥和库：`/etc/pixel-neu.env`（root 600）里放 `PHONE_SALT`、`DB_FILE=/srv/pixel-neu/data/pixel-neu.db`、`SMS_PROVIDER=aliyun` 和四个 `ALIYUN_*`；服务单元用 `EnvironmentFile=` 读它。服务单元有 `ProtectSystem=strict`，所以要加 `ReadWritePaths=/srv/pixel-neu/data`，库目录属主 `pixelneu`、权限 700。
+3. 敏感词表在 `/srv/pixel-neu/data/badwords.txt`（打包后的服务端默认读 `../data/badwords.txt`），改完重启服务。
+4. 真实 IP：网站在 Cloudflare 后面，nginx 用 `snippets/cloudflare-realip.conf`（`set_real_ip_from` Cloudflare 网段 + `real_ip_header CF-Connecting-IP`）还原客户端 IP，`/colyseus/` 里 `proxy_set_header X-Real-IP $remote_addr;` 覆盖客户端自带的头。只设 `X-Real-IP` 不还原的话，同一个 Cloudflare 节点后面的人会共用短信限额。Cloudflare 网段变了要更新这个文件（https://www.cloudflare.com/ips/）。
+5. 网页目录开 gzip，类型至少包括 `application/json`、`application/javascript`、`text/css`：map.json 原样 1.6 MB，压缩后约 190 KB，首屏总传输约 2 MB。
+6. 备份：`/etc/cron.d/pixel-neu-backup` 每天 4:17 用 `sqlite3 .backup` 存到 `/srv/pixel-neu/backup/`，保留 30 天。
+7. 验证：`curl -X POST http://127.0.0.1:8790/api/status` 返回 `{"sms":true}`（接口只收 POST）。
 
 ## 管理
 
