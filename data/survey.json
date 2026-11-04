@@ -1108,6 +1108,8 @@
     {"at":[-481.3,499.5],"width":12}
   ],
   "doors": [
+    {"at":[262.5,188],"facing":"S","main":true,"canopy":"none"},
+    {"at":[-51.5,319],"facing":"S","main":true,"canopy":"none"},
     {"at":[294.25,325.4375],"facing":"W","main":true,"canopy":"none","width":4},
     {"at":[-157.25,500.9375],"facing":"E","main":true},
     {"at":[129.9375,225.625],"facing":"N","main":true,"canopy":"portico"},
