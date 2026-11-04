@@ -4,6 +4,7 @@
 // 切换视角时地面、建筑、物件整套重建，角色重新摆位。
 // 楼和地面都按视野加载：只有镜头附近的楼贴图才下载、上显存，离远了就卸掉。
 import Phaser from 'phaser';
+import { parseTree, season, treeFrame } from '../shared/flora.ts';
 import { AVATAR, DIR, PHRASES, cleanLook, type Look } from '../shared/social.ts';
 import type { Player } from '../shared/state.ts';
 import { vehicleKey } from '../shared/vehicles.ts';
@@ -139,6 +140,9 @@ export class CampusScene extends Phaser.Scene {
   private lamps: Phaser.GameObjects.Image[] = [];
   private shadows!: Shadows;
   private ambient!: Ambient;
+  private treeDay = '';
+  private treeSeason = season(new Date());
+  private treeImgs: { img: Phaser.GameObjects.Image; name: string }[] = [];
   /** 能骑的单车：地图物件编号 → 位置和物件名；bikeImgs 是它们当前视角下的图 */
   private bikes = new Map<number, { x: number; y: number; sprite: string }>();
   private bikeImgs = new Map<number, Phaser.GameObjects.Image>();
@@ -471,6 +475,7 @@ export class CampusScene extends Phaser.Scene {
     this.updateGround();
     this.updateShadows();
     this.updateAmbient(dt);
+    if ((this.game.loop.frame & 63) === 0) this.updateTrees();
     this.placeDest();
     this.updateOverlays();
     this.checkPoi();
@@ -700,6 +705,8 @@ export class CampusScene extends Phaser.Scene {
   /** 物件：四个视角各一张的叫「名字@N」等；rot 是物件相对美术朝向转了几个 90°，换算出该用哪个视角的图 */
   private buildProps(): void {
     this.bikeImgs.clear();
+    this.treeImgs = [];
+    this.treeSeason = season(new Date());
     const meta = this.cache.json.get('props-meta') as Record<string, { w: number; h: number; ax: number; ay: number }>;
     for (const o of this.objects('prop')) {
       const name = prop(o, 'sprite', '');
@@ -713,12 +720,31 @@ export class CampusScene extends Phaser.Scene {
         if (this.bikes.has(o.id)) this.bikeImgs.set(o.id, img);
         continue;
       }
-      const frame = meta[name] ? name : `${name}@${VIEW_NAME[(this.view - prop(o, 'rot', 0) + 8) % 4]}`;
+      const tree = parseTree(name);
+      const seasonal = tree ? treeFrame(tree.species.id, tree.size, tree.variant, this.treeSeason) : name;
+      const frame = meta[seasonal] ? seasonal : meta[name] ? name : `${name}@${VIEW_NAME[(this.view - prop(o, 'rot', 0) + 8) % 4]}`;
       const m = meta[frame];
       if (!m) continue;
       // 平铺在地上的（台阶）画在地面之上、一切站立物之下
       const img = this.add.image(p.x, p.y, 'props', frame).setOrigin(m.ax / m.w, m.ay / m.h).setDepth(prop(o, 'flat', false) ? -5 : p.y).setTint(this.shade);
       this.keep(img, img.getBounds());
+      if (tree) this.treeImgs.push({ img, name });
+    }
+  }
+
+  /** 北京时间跨天时更新树的季节帧。 */
+  private updateTrees(): void {
+    const now = new Date(), day = new Date(now.getTime() + 8 * 3600_000).toISOString().slice(0, 10);
+    if (day === this.treeDay) return;
+    this.treeDay = day;
+    const s = season(now);
+    if (s === this.treeSeason) return;
+    this.treeSeason = s;
+    const tex = this.textures.get('props');
+    for (const { img, name } of this.treeImgs) {
+      const t = parseTree(name)!;
+      const frame = treeFrame(t.species.id, t.size, t.variant, s);
+      img.setFrame(tex.has(frame) ? frame : name);
     }
   }
 
@@ -776,17 +802,16 @@ export class CampusScene extends Phaser.Scene {
     }
   }
 
-  /** 树的位置和大小（米），给投影用。树名里的数字是树冠半径（分米） */
+  /** 树的位置、冠幅和冠心高（米），给投影和鸟落树用。 */
   private trees(): Tree[] {
     const out: Tree[] = [];
     const ppm = TILE / 2;
     for (const o of this.objects('prop')) {
       const name = prop(o, 'sprite', '');
-      const m = /^(tree|pine)-(\d+)$/.exec(name);
-      if (m) {
-        const r = Number(m[2]) / 10;
-        // 阔叶树冠中心约在 1.6R + 1.4 m，针叶树取树高的一半（树高约 3.2R），与 tools/art.ts 的画法一致
-        out.push({ x: o.x / ppm, y: o.y / ppm, r: m[1] === 'tree' ? r : r * 0.8, h: m[1] === 'tree' ? 1.6 * r + 1.4 : 1.6 * r + 0.6 });
+      const t = parseTree(name);
+      if (t) {
+        const r = t.size / 10;
+        out.push({ x: o.x / ppm, y: o.y / ppm, r, h: t.species.crown * r });
       } else if (name.startsWith('conifer-column')) out.push({ x: o.x / ppm, y: o.y / ppm, r: 0.8, h: 3 });
     }
     return out;

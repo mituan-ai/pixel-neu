@@ -5,6 +5,7 @@
 // 没描过的地方画成不可进入的校外色块。碰撞按 1 m 一格（shared/world.ts 的 CELL）。
 // 楼的占地、纪念物和北门的位置来自 OSM（S1），楼基校正见 buildings.ts。只有林地里的树是按冠幅铺满的（DESIGN），因为单棵树的位置看不清。
 import { readFileSync, writeFileSync } from 'node:fs';
+import { SPECIES, treeFrame, type Species } from '../shared/flora.ts';
 import { CELL, LAYER, METERS_PER_TILE as M, TILE, type TiledLayer, type TiledObject, type TiledProperty } from '../shared/world.ts';
 import { VEHICLES } from '../shared/vehicles.ts';
 import { toView, viewSize, VIEWS, VIEW_NAME } from '../shared/view.ts';
@@ -268,35 +269,59 @@ for (const b of buildings)
   for (let y = 0; y < b.h; y += CELL / 2)
     for (let x = 0; x < b.w; x += CELL / 2) if (b.part[y * b.w + x]) setSolid(Math.floor((b.x + x) / CELL), Math.floor((b.y + y) / CELL));
 
-// 描过的单棵树（survey.json 的 trees，加上 treeRows 展开的行道树）：按冠幅挑最接近的树种，阔叶和针叶按位置交替
+// 描过的单棵树与行道树：树位和冠幅沿用 S7，未核实树种的整排按位置选一种阔叶树（待核实）
 {
-  const sizes = TREES.map((name) => ({ name, R: Number(name.split('-')[1]) / 10 }));
-  const rows = survey.treeRows.flatMap(({ from: [x0, y0], to: [x1, y1], gap, r }) => {
-    const n = Math.max(1, Math.round(Math.hypot(x1 - x0, y1 - y0) / gap));
-    return Array.from({ length: n + 1 }, (_, k): [number, number, number] => [x0 + ((x1 - x0) * k) / n, y0 + ((y1 - y0) * k) / n, r]);
+  const broad = SPECIES.filter((t) => t.kind === 'broad');
+  const trees: { at: P; r: number; species: Species; variant: number }[] = survey.trees.map(([x, y, r]) => {
+    const h = hash(Math.round(x), Math.round(y));
+    return { at: [x, y], r, species: broad[h % broad.length], variant: h >>> 8 };
   });
-  for (const [x, y, R] of [...survey.trees, ...rows]) {
-    if (isSolid([x, y])) continue;
-    const kindOf = hash(Math.round(x), Math.round(y)) % 2 ? 'tree' : 'pine';
-    const pick = sizes.filter((t) => t.name.startsWith(kindOf)).reduce((a, b) => (Math.abs(b.R - R) < Math.abs(a.R - R) ? b : a));
-    placeProp(pick.name, [x, y], 1, 1);
+  for (const { from: [x0, y0], to: [x1, y1], gap, r, species } of survey.treeRows) {
+    // 同一直线的分段共用树种，接头不混种
+    const h = hash(x0 === x1 ? Math.round(x0) : 0, y0 === y1 ? Math.round(y0) : 0);
+    const t = species ? SPECIES.find((t) => t.id === species)! : broad[(h >>> 8) % broad.length];
+    const n = Math.max(1, Math.round(Math.hypot(x1 - x0, y1 - y0) / gap));
+    for (let k = 0; k <= n; k++) trees.push({ at: [x0 + ((x1 - x0) * k) / n, y0 + ((y1 - y0) * k) / n], r, species: t, variant: k });
+  }
+  for (const { at, r, species, variant } of trees) {
+    if (isSolid(at)) continue;
+    const size = species.sizes.reduce((a, b) => Math.abs(b / 10 - r) < Math.abs(a / 10 - r) ? b : a);
+    placeProp(treeFrame(species.id, size, variant % species.variants, 'summer'), at, 1, 1);
   }
 }
 
-// 林地里的树（DESIGN）：卫星图上树冠连片，看不清单棵树，只在描出的林地范围内每约 7 m 种一棵，留出林下空地。
-// 针叶与阔叶约各半（卫星图上林地里深色针叶树和浅色阔叶树混杂），冠幅见 tiles.ts 的 TREES
+// 林地范围沿用 S7；林内位置、密度与混种是 TASK-19 的程序化推定，见 sources.md 待核实
 {
-  const STEP = 7;
-  for (let gy = EXTENT.y0 + STEP / 2; gy < EXTENT.y1; gy += STEP)
-    for (let gx = EXTENT.x0 + STEP / 2; gx < EXTENT.x1; gx += STEP) {
-      const h = hash(Math.round(((gx - EXTENT.x0) / M) * 10), Math.round(((gy - EXTENT.y0) / M) * 10));
-      const p: P = [gx + ((h % 100) / 100 - 0.5) * 3, gy + (((h >>> 8) % 100) / 100 - 0.5) * 3];
-      if (ground.at(p) !== 'wood' || isSolid(p) || nearAxis(p)) continue;
+  const trees = SPECIES.filter((t) => t.kind !== 'shrub'), shrubs = SPECIES.filter((t) => t.kind === 'shrub');
+  const noise = (x: number, y: number) => {
+    const gx = Math.floor(x / 64), gy = Math.floor(y / 64), u = x / 64 - gx, v = y / 64 - gy;
+    const sx = u * u * (3 - 2 * u), sy = v * v * (3 - 2 * v);
+    const at = (c: number, r: number) => hash(c * 37 + 137, r * 53 - 211) / 4294967296;
+    return (at(gx, gy) * (1 - sx) + at(gx + 1, gy) * sx) * (1 - sy) + (at(gx, gy + 1) * (1 - sx) + at(gx + 1, gy + 1) * sx) * sy;
+  };
+  const edge = (p: P, d: number) => [[d, 0], [-d, 0], [0, d], [0, -d], [d * 0.707, d * 0.707], [-d * 0.707, d * 0.707], [d * 0.707, -d * 0.707], [-d * 0.707, -d * 0.707]].some(([dx, dy]) => ground.at([p[0] + dx, p[1] + dy]) !== 'wood');
+  const STEP = 5.5;
+  for (let gy = EXTENT.y0 + STEP / 2, iy = 0; gy < EXTENT.y1; gy += STEP, iy++)
+    for (let gx = EXTENT.x0 + STEP / 2, ix = 0; gx < EXTENT.x1; gx += STEP, ix++) {
+      const h = hash(ix * 11 + 41, iy * 13 + 97), density = noise(gx, gy);
+      if (density < 0.32 || (density < 0.60 && (ix % 2 || iy % 2))) continue;
+      const p: P = [gx + ((h % 100) / 100 - 0.5) * 0.4, gy + (((h >>> 8) % 100) / 100 - 0.5) * 0.4];
+      if (ground.at(p) !== 'wood' || isSolid(p) || nearAxis(p) || edge(p, 4)) continue;
       // 北门石柱前留空，别挡住校名
       if (Math.abs(p[0] - gate[0]) < 18 && p[1] < gate[1] + 8) continue;
-      // 树干离林地边缘至少 2 m，免得长在路上
-      if ([[2, 0], [-2, 0], [0, 2], [0, -2]].some(([dx, dy]) => ground.at([p[0] + dx, p[1] + dy]) !== 'wood')) continue;
-      placeProp(TREES[(h >>> 16) % TREES.length], p, 1, 1);
+      const main = Math.min(trees.length - 1, Math.floor(noise(gx + 1024, gy - 768) * trees.length));
+      const t = trees[h % 100 < 75 ? main : h % 100 < 95 ? (main + 1) % trees.length : (h >>> 12) % trees.length];
+      const size = t.sizes[(h >>> 16) % t.sizes.length];
+      placeProp(treeFrame(t.id, size, (h >>> 22) % t.variants, 'summer'), p, 1, 1);
+    }
+  // 灌木只放在已描林地内、距林缘约 2–4 m 的带上，楼前林地同样处理
+  for (let y = EXTENT.y0 + 2; y < EXTENT.y1; y += 4)
+    for (let x = EXTENT.x0 + 2; x < EXTENT.x1; x += 4) {
+      const p: P = [x, y], h = hash(Math.round(x * 10), Math.round(y * 10));
+      if (ground.at(p) !== 'wood' || isSolid(p) || nearAxis(p) || edge(p, 2) || !edge(p, 4) || h % 100 < 35) continue;
+      if (Math.abs(p[0] - gate[0]) < 18 && p[1] < gate[1] + 8) continue;
+      const t = shrubs[(h >>> 8) % shrubs.length];
+      placeProp(treeFrame(t.id, t.sizes[(h >>> 16) % t.sizes.length], (h >>> 22) % t.variants, 'summer'), p, 0.6, 0.6);
     }
 }
 

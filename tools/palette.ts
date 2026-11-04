@@ -142,6 +142,20 @@ export const PAL = {
   tinGreen1: 0x55886b,
   tileRed0: 0x7d3a2e,
   tileRed1: 0xa04b3a,
+
+  // 树木：嫩叶、金黄、橙黄与丁香秋叶（S53–S59）
+  bud0: 0x668c46,
+  bud1: 0x91b956,
+  bud2: 0xc0d982,
+  autumnGold0: 0xa77c2d,
+  autumnGold1: 0xdcb63e,
+  autumnGold2: 0xf6dc76,
+  autumnOrange0: 0x9e522e,
+  autumnOrange1: 0xcf813b,
+  autumnOrange2: 0xedb65b,
+  autumnRed0: 0x793f42,
+  autumnRed1: 0xac5753,
+  autumnRed2: 0xd78968,
 } as const;
 
 export type PalKey = keyof typeof PAL;
