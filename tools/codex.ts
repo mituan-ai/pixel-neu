@@ -63,7 +63,7 @@ if (cmd === 'start') {
   execFileSync('git', ['-c', 'protocol.file.allow=always', 'submodule', 'update', '--init'], { cwd: wt, stdio: 'ignore' });
   for (const f of LOCAL) if (existsSync(join(ROOT, f)) && !existsSync(join(wt, f))) symlinkSync(join(ROOT, f), join(wt, f));
   // .gitignore 里的 node_modules/、data/ref/ 只匹配目录，链接要另外排除
-  const exclude = join(git(ROOT, 'rev-parse', '--git-common-dir'), 'info/exclude');
+  const exclude = join(ROOT, git(ROOT, 'rev-parse', '--git-common-dir'), 'info/exclude');
   const have = existsSync(exclude) ? readFileSync(exclude, 'utf8') : '';
   const add = LOCAL.filter((f) => !have.split('\n').includes(`/${f}`)).map((f) => `/${f}\n`).join('');
   if (add) writeFileSync(exclude, have + (have && !have.endsWith('\n') ? '\n' : '') + add);
