@@ -41,3 +41,13 @@ describe('楼型', () => {
     }
   });
 });
+
+describe('survey.json', () => {
+  it('每个数组的条目都是这个数组的写法（并行任务合并时容易接错数组）', () => {
+    const MARKS = new Set(['zebra', 'stop', 'arrow', 'bump']);
+    for (const a of survey.areas) expect(MARKS.has(a.kind), `areas 里的 ${JSON.stringify(a)}`).toBe(false);
+    for (const m of survey.marks) expect(MARKS.has(m.kind), `marks 里的 ${JSON.stringify(m)}`).toBe(true);
+    const need: [keyof typeof survey, string][] = [['doors', 'facing'], ['bikeRacks', 'from'], ['stalls', 'back'], ['treeRows', 'gap'], ['lampRows', 'gap'], ['props', 'sprite'], ['gates', 'width'], ['places', 'text'], ['newBuildings', 'storeys']];
+    for (const [k, f] of need) for (const x of survey[k] as object[]) expect(x, `${k} 里的 ${JSON.stringify(x)}`).toHaveProperty(f);
+  });
+});

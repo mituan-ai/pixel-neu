@@ -866,10 +866,7 @@
     {"kind":"parking","poly":[[-270,951],[-234,951],[-234,959],[-270,959]]},
     {"kind":"paving","poly":[[104,908],[174,908],[174,944],[104,944]]},
     {"kind":"asphalt","line":[[-275,869],[-275,900]],"width":8,"dash":true},
-    {"kind":"asphalt","line":[[-275,900],[-275,979]],"width":8,"dash":true}
-  ],
-  "marks": [
-    {"kind":"zebra","from":[-528,1000],"to":[-520,1000],"width":4},
+    {"kind":"asphalt","line":[[-275,900],[-275,979]],"width":8,"dash":true},
     {"kind":"grass","poly":[[-74,360],[-51,360],[-51,378],[-74,378]]},
     {"kind":"paving","line":[[-63,355],[-63,378]],"width":3},
     {"kind":"grass","poly":[[300,225],[330,225],[330,245],[300,245]]},
@@ -890,6 +887,9 @@
     {"kind":"parking","poly":[[-240,757],[-140,757],[-140,761],[-240,761]]},
     {"kind":"paving","line":[[-190,679],[-190,697]],"width":5},
     {"kind":"paving","line":[[-190,685],[-124,685]],"width":3}
+  ],
+  "marks": [
+    {"kind":"zebra","from":[-528,1000],"to":[-520,1000],"width":4}
   ],
   "fields": [
     {"type":"track","at":[452.5,282.5]},
@@ -1153,12 +1153,12 @@
     {"at":[-212,949],"facing":"S","main":true,"canopy":"none"},
     {"at":[-194,979],"facing":"S","main":true,"canopy":"none"},
     {"at":[416,856],"facing":"S","main":true,"canopy":"none"},
-    {"at":[479,876],"facing":"S","main":true,"canopy":"none"}
+    {"at":[479,876],"facing":"S","main":true,"canopy":"none"},
+    {"at":[-42,350],"facing":"S","main":true,"canopy":"none"}
   ],
   "bikeRacks": [
     {"from":[-329,858],"to":[-315,858],"covered":true},
-    {"from":[-307,858],"to":[-293,858],"covered":true},
-    {"at":[-42,350],"facing":"S","main":true,"canopy":"none"}
+    {"from":[-307,858],"to":[-293,858],"covered":true}
   ],
   "places": [
     {"name":"游泳馆","at":[291.5,325.5],"text":"2006 年 7 月投入使用，供游泳教学、训练和日常健身使用。","src":"S33"},
