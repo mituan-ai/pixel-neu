@@ -2,7 +2,7 @@
 //   node tools/codex.ts start TASK-14     建 worktree 并开跑（任务单 docs/codex/TASK-14-*.md 要先提交到当前分支）
 //   node tools/codex.ts status            各任务的状态和 Codex 的最后回复
 //   node tools/codex.ts check TASK-14     在 worktree 里跑 typecheck 和测试，列出改动
-//   node tools/codex.ts merge TASK-14     合并进当前分支，删掉 worktree 和分支（合并后自己跑 npm run map && npm run art）
+//   node tools/codex.ts merge TASK-14     提交 Codex 留下的改动（生成产物除外），合并进当前分支，删掉 worktree 和分支（合并后自己跑 npm run map && npm run art）
 //   node tools/codex.ts drop TASK-14      不要了：删掉 worktree 和分支
 // worktree 在仓库旁边的 pixel-neu-codex/<任务>/，日志 <任务>.log，Codex 的最后回复 <任务>.md。
 import { spawn, execFileSync } from 'node:child_process';
@@ -68,9 +68,9 @@ if (cmd === 'start') {
   const add = LOCAL.filter((f) => !have.split('\n').includes(`/${f}`)).map((f) => `/${f}\n`).join('');
   if (add) writeFileSync(exclude, have + (have && !have.endsWith('\n') ? '\n' : '') + add);
   const log = openSync(join(HOME, `${t}.log`), 'w');
-  // 沙箱默认只能写 worktree：提交要写主仓库的 .git，测试要写 node_modules 里的缓存，参考照片放主仓库的 data/ref
+  // 沙箱默认只能写 worktree：测试要写 node_modules 里的缓存，参考照片放主仓库的 data/ref。.git 沙箱总是只读，所以由 merge 替 Codex 提交
   mkdirSync(join(ROOT, 'data/ref'), { recursive: true });
-  const writable = [join(ROOT, git(ROOT, 'rev-parse', '--git-common-dir')), join(ROOT, 'node_modules'), join(ROOT, 'data/ref')].flatMap((d) => ['--add-dir', d]);
+  const writable = [join(ROOT, 'node_modules'), join(ROOT, 'data/ref')].flatMap((d) => ['--add-dir', d]);
   // 模型和思考强度固定：gpt-6.1-sol、中等，性价比最高
   const child = spawn('codex', ['exec', '-m', 'gpt-6.1-sol', '-c', 'model_reasoning_effort="medium"', '-C', wt, '-s', 'workspace-write', '-c', 'sandbox_workspace_write.network_access=true', ...writable, '-o', join(HOME, `${t}.md`), prompt(path)], {
     detached: true,
@@ -101,7 +101,14 @@ if (cmd === 'start') {
   const t = need(task), wt = dir(t);
   if (alive(t)) throw new Error(`${t} 还在跑`);
   if (cmd === 'merge') {
-    if (git(wt, 'status', '--porcelain', '--', '.', ':!assets', ':!art')) throw new Error(`${wt} 里还有未提交的改动`);
+    // 生成产物不进提交；剩下的改动以任务单标题提交
+    git(wt, 'checkout', '--', 'assets');
+    git(wt, 'clean', '-fdq', '--', 'assets');
+    git(join(wt, 'art'), 'checkout', '--', '.');
+    if (git(wt, 'status', '--porcelain')) {
+      git(wt, 'add', '-A');
+      git(wt, 'commit', '-m', readFileSync(join(ROOT, sheet(t)), 'utf8').split('\n')[0].replace(/^#\s*/, ''));
+    }
     git(ROOT, 'merge', '--no-ff', '-m', `合并 Codex ${t}`, `codex/${t}`);
   }
   git(ROOT, 'worktree', 'remove', '--force', wt);

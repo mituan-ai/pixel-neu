@@ -46,8 +46,8 @@
 - 不写总结文档、审查报告、CHANGELOG 或 TODO 清单；要记的东西只写进 `docs/sources.md`。
 - 不装依赖，不升级依赖。
 - 不重构、不抽公共函数、不改已有函数的签名。确实绕不过去时，在回复里说明，不要自己改。
-- 在当前分支上提交（提交信息用中文，一个任务一到几个提交），不推送，不合并，不部署。
-- 不提交生成产物：`assets/` 下 `npm run map`、`npm run art` 生成的文件（`map.json`、`ground/`、`buildings/`、图集等）和 `art/palette.gpl`。可以生成出来自己看，提交前 `git checkout -- assets art` 还原。
+- 不用提交（沙箱里 `.git` 只读），改动留在工作区，`merge` 时由 `tools/codex.ts` 提交；不推送，不合并，不部署。
+- 不提交生成产物：`assets/` 下 `npm run map`、`npm run art` 生成的文件（`map.json`、`ground/`、`buildings/`、图集等）和 `art/palette.gpl`。可以生成出来自己看，做完前 `git checkout -- assets` 并在 `art/` 里 `git checkout -- .` 还原。
 - 不读、不打印、不写入 `.env.local` 里的密钥。需要时通过环境变量用。
 - 不把照片、卫星图放进仓库。它们只能在 `data/` 下的本地文件里。
 
