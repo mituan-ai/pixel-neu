@@ -122,6 +122,26 @@ export const PAL = {
   uiBlue: 0x3fa9f5,
   uiOrange: 0xffb627,
   uiGreen: 0x5cc46a,
+
+  // 楼型：红砖、黄色涂料、白瓷砖、蓝绿幕墙、彩钢和瓦屋面（立面三档：暗、中、亮）
+  redbrick0: 0x6e3b33,
+  redbrick1: 0x8f4c40,
+  redbrick2: 0xa9614f,
+  ochre0: 0x9a7a45,
+  ochre1: 0xc29f5e,
+  ochre2: 0xdcc085,
+  tile0: 0xb9bcbc,
+  tile1: 0xdfe1df,
+  tile2: 0xf2f2ee,
+  curtain0: 0x2c4a55,
+  curtain1: 0x3f6b78,
+  curtain2: 0x77a3ad,
+  tinBlue0: 0x2f5880,
+  tinBlue1: 0x4475a3,
+  tinGreen0: 0x3d6a52,
+  tinGreen1: 0x55886b,
+  tileRed0: 0x7d3a2e,
+  tileRed1: 0xa04b3a,
 } as const;
 
 export type PalKey = keyof typeof PAL;

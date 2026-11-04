@@ -34,14 +34,53 @@ export interface Shape {
  * 后写的分区盖住先写的。分区只改高度，不扩大楼基。
  * - storeys：层数（一层 3.6 m）；height：直接给高度（米），给了就不看 storeys
  * - roof：flat 平顶（默认）；dome 穹顶，墙高之上再拱起 rise 米，按分区外接椭圆起拱；
- *   stands 看台，座位从朝 toward 的一边起、到背向的一边升到全高，按 0.8 m 一排画台阶，排和「分区中心 → toward」垂直
+ *   stands 看台，座位从朝 toward 的一边起、到背向的一边升到全高，按 0.8 m 一排画台阶，排和「分区中心 → toward」垂直；
+ *   gable 双坡，屋脊沿分区外接框的长边，檐口到屋脊升 rise 米；hip 四坡，四面都从檐口升到屋脊
+ * - look：这个分区换一种楼型（例如裙楼是石材、塔楼是幕墙），不写跟整栋楼
  */
 export interface Part extends Shape {
   storeys?: number;
   height?: number;
-  roof?: 'flat' | 'dome' | 'stands';
+  roof?: 'flat' | 'dome' | 'stands' | 'gable' | 'hip';
   rise?: number;
   toward?: P;
+  look?: string;
+}
+
+/** 立面朝向（墙面朝外的地理方向） */
+export type Face = 'N' | 'E' | 'S' | 'W';
+
+/**
+ * 楼的特色构件，画在 face 那面墙上从 from 到 to 的一段（两点都在墙脚线上，世界米坐标）。
+ * storeys 是 [起层, 止层]，层号从 0 数（0 是首层），不写就是整面墙高：
+ * - stair：外挂楼梯，之字形梯段加栏杆，一层一折
+ * - void：镂空或架空，这一段墙后是空的（看进去是暗的），两边留柱
+ * - screen：花格或格栅，墙面前一层镂空格子，pitch 是格子间距（米，默认 1）
+ * - glass：竖向通高玻璃带（楼梯间、门厅）
+ * - colonnade：柱廊，pitch 米一根柱子（默认 4），柱间是暗的廊下
+ * - band：一道横向饰带（color 是色板颜色名），常见于檐口下、层间
+ */
+export interface Feature {
+  kind: 'stair' | 'void' | 'screen' | 'glass' | 'colonnade' | 'band';
+  face: Face;
+  from: P;
+  to: P;
+  storeys?: [number, number];
+  pitch?: number;
+  color?: string;
+}
+
+/**
+ * 楼的外观，写在 buildings、newBuildings 的条目里：
+ * - look：楼型名（tools/facades.ts 的 LOOKS），相似的楼共用一个；不写用 neutral（中性立面）
+ * - tweak：只改这栋楼的几个参数（字段同 Look，例如换墙色、窗宽）
+ * - features：特色构件（见 Feature）
+ * - src：外观依据的来源编号（R 号、S 号），和 name 的 src 合写在一起
+ */
+export interface Appearance {
+  look?: string;
+  tweak?: Record<string, unknown>;
+  features?: Feature[];
 }
 
 /**
@@ -73,9 +112,9 @@ export interface Survey {
    * - drop：OSM 轮廓和实际的楼对不上（形状错、楼已拆），不画它，改在 newBuildings 里重描
    * - name、src：楼名和它的来源编号（docs/sources.md 的 S 号，逗号分隔）；不写就没有名字，OSM 的 name 不自动用
    */
-  buildings: Record<string, { shift?: P; lean?: P; storeys?: number; height?: number; roof?: Part['roof']; rise?: number; toward?: P; parts?: Part[]; drop?: boolean; name?: string; src?: string }>;
-  /** OSM 里没有的楼：形状直接描墙脚（楼基）；height、roof、rise、toward、parts、name、src 同上 */
-  newBuildings: (Shape & { storeys: number; height?: number; roof?: Part['roof']; rise?: number; toward?: P; parts?: Part[]; name?: string; src?: string })[];
+  buildings: Record<string, Appearance & { shift?: P; lean?: P; storeys?: number; height?: number; roof?: Part['roof']; rise?: number; toward?: P; parts?: Part[]; drop?: boolean; name?: string; src?: string }>;
+  /** OSM 里没有的楼：形状直接描墙脚（楼基）；height、roof、rise、toward、parts、name、src 和外观同上 */
+  newBuildings: (Shape & Appearance & { storeys: number; height?: number; roof?: Part['roof']; rise?: number; toward?: P; parts?: Part[]; name?: string; src?: string })[];
   /**
    * 视差标定（npm run parallax 用）：box [x0, y0, x1, y1] 范围里的楼，以 ref 这栋 OSM 楼为参考算每期卫星图的斜拍偏移。
    * ref 的 shift 和 storeys 必须是对着墙脚、立面照片量准的。卫星图是几次航拍拼起来的，换一片偏移方向和大小都会变，所以按范围分别标定。
@@ -103,8 +142,12 @@ export interface Survey {
   stalls: { at: P; n: number; back: 'N' | 'E' | 'S' | 'W' }[];
   /** 北门以外的校门：校界栅栏在 at 处断开 width 米 */
   gates: { at: P; width: number }[];
-  /** 楼门：at 是门洞中点（落在墙脚线上），facing 是门朝外的方向，main 是正门 */
-  doors: { at: P; facing: 'N' | 'E' | 'S' | 'W'; main?: boolean }[];
+  /**
+   * 楼门：at 是门洞中点（落在墙脚线上），facing 是门朝外的方向，main 是正门。
+   * 楼的贴图按它在墙上开门洞：width 门洞宽（米，默认正门 3、侧门 1.8），height 门洞高（米，默认 2.6）；
+   * canopy 是门头：slab 一块挑出的雨棚板（正门默认），portico 两根柱子撑的门廊，none 没有（侧门默认）
+   */
+  doors: { at: P; facing: Face; main?: boolean; width?: number; height?: number; canopy?: 'slab' | 'portico' | 'none' }[];
   /** 单车停放排：车头朝向和排垂直，从 from 到 to 每 0.7 m 一辆；covered 是有棚的（多为电动车棚） */
   bikeRacks: { from: P; to: P; covered?: boolean }[];
   /** 兴趣点（介绍卡片）：at 是卡片触发的位置（楼的正门外、纪念物旁），text 每句都要有来源，src 是 S 号，逗号分隔 */

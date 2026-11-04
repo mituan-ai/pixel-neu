@@ -1,11 +1,15 @@
 // 建筑：按楼基像素和每个像素的屋面高度（buildings.ts）做 3/4 俯视挤出——每个像素画屋顶（上移自身高度），
 // 前面那个像素更矮就往下画立面。从后排往前排画，前排自然盖住后排；斜墙、弧墙按像素自然成形。
 // 每个视角各画一张：楼基先转到视角下，屏幕朝下的那一面是哪个地理朝向，就用哪个朝向的立面。
-// 立面和屋顶花样按 style 区分；新地标在 STYLES 里加一种，再在 buildings.ts 的 NAMED 里指定。
+// 一般的楼按楼型画（tools/facades.ts 的 LOOKS，survey.json 里给每栋楼指定），再叠特色构件和门；
+// 信息学馆、图书馆这样的地标有专门的 style（STYLES，在 buildings.ts 的 NAMED 里指定）。
 // 有照片依据的立面放在 art/facades/<style>-<朝向>.png（正立面图，1 m = 8 px），按图取色；其余朝向用程序立面。
 import { existsSync } from 'node:fs';
 import { FACING, fromView, toView, viewSize, type View } from '../shared/view.ts';
 import { heights, type BuildingModel, type PartModel } from './buildings.ts';
+import { EXTENT } from './geo.ts';
+import { doorPixel, featurePixel, lookFacade, lookOf, RAMPS, type Look } from './facades.ts';
+import { PPM } from './shape.ts';
 import { PAL, type Color, type PalKey } from './palette.ts';
 import { Pix, loadPix, rng } from './pix.ts';
 import { BUILDING } from './tiles.ts';
@@ -124,18 +128,6 @@ function pane(xs: number, ys: number, w: number, h: number): PalKey {
   return xs + ys < 5 ? 'glass2' : 'glass1';
 }
 
-/** 普通楼：浅色墙面，每 4 m 一扇 1.5 m 宽的窗 */
-const plain: Style = {
-  facade({ x, yg, hTop, hBottom }) {
-    if (hBottom === 0 && yg < PLINTH) return 'plain0';
-    if (yg >= hTop - PARAPET) return yg === hTop - 1 ? 'plain2' : 'plain1';
-    const ys = (yg - PLINTH) % STOREY, xs = x % 32;
-    if (ys >= WIN0 && ys < WIN1 && xs >= 10 && xs < 22) return glass(pane(xs - 10, WIN1 - 1 - ys, 12, WIN1 - WIN0), `plain:${Math.floor(x / 32)}:${Math.floor((yg - PLINTH) / STOREY)}`);
-    if (ys === WIN0 - 1 && xs >= 9 && xs < 23) return 'plain1';
-    return 'plain2';
-  },
-};
-
 /**
  * 信息学馆：米色石材（据航拍 R-info-06-02、正面照 R-info-01）。
  * - 两翼：每 4 m 一扇约 2 m 见方的窗，首层上沿一道腰线
@@ -223,7 +215,7 @@ const library: Style = {
   },
 };
 
-const STYLES: Record<string, Style> = { plain, info, library };
+const STYLES: Record<string, Style> = { info, library };
 
 /** 屋顶平面上每个像素离同高屋面边缘的距离（棋盘距离，最多算到 cap） */
 function insetMap(w: number, h: number, height: (x: number, y: number) => number, cap: number): Uint8Array {
@@ -309,10 +301,16 @@ function rotateArr<T extends Uint8Array | Float32Array>(v: View, a: T, w: number
 }
 
 /** 穹顶、看台的屋面颜色：按表面朝向取明暗（光从左上来） */
-function surface(roof: PartModel['roof'], hgt: (x: number, y: number) => number, x: number, y: number, wx: number, wy: number): PalKey {
+function surface(roof: PartModel['roof'], hgt: (x: number, y: number) => number, x: number, y: number, wx: number, wy: number, look: Look): PalKey {
   if (roof === 'stands') return Math.round(hgt(x, y)) % 2 ? 'water1' : 'water0';
   const gx = hgt(x + 1, y) - hgt(x - 1, y), gy = hgt(x, y + 1) - hgt(x, y - 1);
   const lit = (gx + gy) / 2 + 0.6;
+  // 坡屋面：按朝光与否取楼型屋面的亮、暗两档，每 0.4 m 一道瓦缝
+  if (roof === 'gable' || roof === 'hip') {
+    const [r0, r1, r2] = look.roof;
+    if (Math.round(hgt(x, y) * 2) % 7 === 0) return r0;
+    return lit > 0.9 ? r2 : lit > 0.2 ? r1 : r0;
+  }
   // 东西向每 4 m 一道接缝
   if (wx % 32 === 0) return lit > 0.9 ? 'stone2' : 'stone1';
   void wy;
@@ -331,7 +329,13 @@ export function drawBuildingLight(b: BuildingModel, view: View): Pix {
 function renderBuilding(b: BuildingModel, view: View, light: boolean): Pix {
   const face = FACING[view];
   const elev = elevation(b.style, face);
-  const style = STYLES[b.style] ?? plain;
+  const style = STYLES[b.style];
+  const looks = new Map<string, Look>();
+  const lookAt = (k: number) => {
+    const name = b.parts[k - 1].look ?? b.look;
+    if (!looks.has(name)) looks.set(name, lookOf(name, name === b.look ? b.tweak : {}));
+    return looks.get(name)!;
+  };
   const hw = heights(b);
   const P = rotateArr(view, b.part, b.w, b.h, (n) => new Uint8Array(n));
   const Hh = rotateArr(view, hw, b.w, b.h, (n) => new Float32Array(n));
@@ -359,6 +363,27 @@ function renderBuilding(b: BuildingModel, view: View, light: boolean): Pix {
     return k && b.parts[k - 1].roof === 'flat' ? k : 0;
   };
   const inset = insetMap(W, H, flatId, 255);
+  /** 视角下的像素 → 世界米坐标（像素中心） */
+  const toMeters = (x: number, y: number): [number, number] => {
+    const q = toWorldPx(x, y);
+    return [EXTENT.x0 + (b.x + q.x) / PPM, EXTENT.y0 + (b.y + q.y) / PPM];
+  };
+  // 每一排连续立面的左右端：窗按段居中排
+  const runs = new Int32Array(W * H * 2).fill(-1);
+  for (let y = 0; y < H; y++) {
+    let x = 0;
+    while (x < W) {
+      const isFace = (xx: number) => part(xx, y) > 0 && hr(xx, y + 1) < hr(xx, y) && hr(xx, y + 1) === hr(x, y + 1) && hr(xx, y) === hr(x, y);
+      if (!isFace(x)) {
+        x++;
+        continue;
+      }
+      let e = x;
+      while (e + 1 < W && isFace(e + 1)) e++;
+      for (let i = x; i <= e; i++) (runs[(y * W + i) * 2] = x), (runs[(y * W + i) * 2 + 1] = e);
+      x = e + 1;
+    }
+  }
 
   // 地面投影不烘焙：游戏里按太阳位置实时投影（src/shadows.ts）
 
@@ -371,16 +396,22 @@ function renderBuilding(b: BuildingModel, view: View, light: boolean): Pix {
       const roofY = top + y - hh;
       // 屋顶：平顶是女儿墙压顶一圈亮色，内侧一道阴影，北边和西边的女儿墙把影子投到屋面上；穹顶和看台按表面明暗
       const wp = toWorldPx(x, y);
+      const look = lookAt(k);
+      const [r0, r1, r2] = look.roof;
       let col: PalKey;
-      if (pm.roof !== 'flat') col = surface(pm.roof, hf, x, y, Math.floor(wp.x), Math.floor(wp.y));
+      if (pm.roof !== 'flat') col = surface(pm.roof, hf, x, y, Math.floor(wp.x), Math.floor(wp.y), look);
       else {
         const d = inset[y * W + x];
-        if (d < 2) col = 'roof2';
-        else if (d === 2) col = 'roof0';
+        if (d < 2) col = r2;
+        else if (d === 2) col = r0;
         else {
-          col = style.roof?.({ x: Math.floor(wp.x), y: Math.floor(wp.y), fx: wp.x / b.w, fy: wp.y / b.h, inset: d, level: k }) ?? (rand() < 0.04 ? 'roof0' : 'roof1');
+          const g = Math.round(look.roofGrid * PPM), gx = Math.floor(wp.x), gy = Math.floor(wp.y);
+          // 隔热砖分格：缝是暗一档的细线，每块砖里偶尔一块颜色浅一点
+          const seam = g && !style && (gx % g === 0 || gy % g === 0) && (gx + gy) % 2 === 0;
+          const pale = g && !style && ((Math.imul(((gx / g) | 0) + 31, 2654435761) ^ Math.imul(((gy / g) | 0) + 17, 40503)) >>> 0) % 97 === 0;
+          col = style?.roof?.({ x: gx, y: gy, fx: wp.x / b.w, fy: wp.y / b.h, inset: d, level: k }) ?? (seam ? r0 : pale ? r2 : rand() < 0.04 ? r0 : r1);
           const shadowed = (y >= 2 && inset[(y - 2) * W + x] < 2) || (x >= 2 && inset[y * W + x - 2] < 2);
-          if (shadowed && col === 'roof1') col = 'roof0';
+          if (shadowed && col === r1) col = r0;
         }
       }
       paint(x, roofY, col);
@@ -390,9 +421,11 @@ function renderBuilding(b: BuildingModel, view: View, light: boolean): Pix {
       // 墙面朝向：前沿往右下斜的一段朝左下、受光，往右上斜的一段背光
       const leftOpen = (yg: number) => hr(x - 1, y) <= yg && hr(x - 1, y + 1) <= yg;
       const rightOpen = (yg: number) => hr(x + 1, y) <= yg;
+      const [wx, wy] = toMeters(x, y);
+      const run0 = runs[(y * W + x) * 2], run1 = runs[(y * W + x) * 2 + 1];
       for (let yg = front; yg < hh; yg++) {
         let c: FacadePixel;
-        if (yg >= pm.wall) c = surface(pm.roof, hf, x, y, Math.floor(wp.x), Math.floor(wp.y));
+        if (yg >= pm.wall) c = surface(pm.roof, hf, x, y, Math.floor(wp.x), Math.floor(wp.y), look);
         else if (pm.roof === 'stands') c = yg % 6 === 0 ? 'stone1' : 'stone2';
         else {
           // 有立面图就按图取色（图和占地按中线对齐）；女儿墙仍用程序画，和屋顶接得上
@@ -409,7 +442,13 @@ function renderBuilding(b: BuildingModel, view: View, light: boolean): Pix {
               continue;
             }
           }
-          c = style.facade({ x, yg, face, level: k, hTop: pm.wall, hBottom: front, axis });
+          if (style) c = style.facade({ x, yg, face, level: k, hTop: pm.wall, hBottom: front, axis });
+          else {
+            const at = { x, run0: run0 < 0 ? x : run0, run1: run1 < 0 ? x : run1, yg, hTop: pm.wall, hBottom: front, face, wx, wy };
+            c = lookFacade(look, at);
+            for (const [fi, f] of b.features.entries()) c = featurePixel(look, f, fi, at, c) ?? c;
+            c = doorPixel(look, b.doors, at) ?? c;
+          }
         }
         let color = typeof c === 'object' ? c.color : c;
         if (leftOpen(yg)) color = shadeKey(color, +1);
@@ -418,16 +457,46 @@ function renderBuilding(b: BuildingModel, view: View, light: boolean): Pix {
       }
     }
   }
+  // 屋顶小件：只放在最高的平顶分区上，免得盖住前面更高的部分
+  const maxWall = Math.max(...b.parts.filter((p) => p.roof === 'flat').map((p) => p.wall), 0);
+  const onTop = (x: number, y: number, need: number) => flatId(x, y) && b.parts[part(x, y) - 1].wall === maxWall && inset[y * W + x] >= need;
+  const free = (x: number, y: number) => !style?.roof?.({ ...(() => { const q = toWorldPx(x, y); return { x: Math.floor(q.x), y: Math.floor(q.y), fx: q.x / b.w, fy: q.y / b.h }; })(), inset: 99, level: part(x, y) });
+  // 楼梯间：每 800 m² 屋面一个，4 × 6 m、高 3 m，正面一扇门
+  let roofArea = 0;
+  for (let i = 0; i < W * H; i++) if (P.a[i] && b.parts[P.a[i] - 1].wall === maxWall && b.parts[P.a[i] - 1].roof === 'flat') roofArea++;
+  for (let n = 0, tries = 0; !style && n < Math.round(roofArea / (PPM * PPM) / 800) && tries < 80; tries++) {
+    const look = lookAt(1);
+    if (!look.penthouse) break;
+    const bw = 32, bh = 48, x = Math.floor(rand() * (W - bw)), y = Math.floor(rand() * (H - bh));
+    if (![[x, y], [x + bw, y], [x, y + bh], [x + bw, y + bh]].every(([px, py]) => onTop(px, py, 16))) continue;
+    const ry = top + y - maxWall - 24, [w0, w1, w2] = look.wall;
+    paintRect(paint, x, ry, bw, bh, look.roof[1]);
+    paintRect(paint, x, ry, bw, 1, look.roof[2]);
+    paintRect(paint, x, ry + bh, bw, 24, w1);
+    paintRect(paint, x, ry + bh, 1, 24, w2);
+    paintRect(paint, x + bw - 1, ry + bh, 1, 24, w0);
+    paintRect(paint, x + 12, ry + bh + 6, 8, 18, 'slate');
+    n++;
+  }
+  const lookTop = lookAt(1);
+  // 光伏板：成排的深蓝板，每排 1 m 宽、间隔 1.5 m
+  if (!style && lookTop.rooftop === 'solar')
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        if (!onTop(x, y, 10) || !free(x, y)) continue;
+        const q = toWorldPx(x, y), ys = Math.floor(q.y) % 20;
+        if (ys >= 8 || Math.floor(q.x) % 48 < 2) continue;
+        paint(x, top + y - maxWall, ys === 0 ? 'curtain2' : ys === 7 ? 'shadow' : ys % 3 ? 'curtain0' : 'curtain1');
+      }
   // 素平顶上随机放几台设备箱，打破大片平顶
-  for (let y = 0; y + 16 <= H; y += 16)
-    for (let x = 0; x + 16 <= W; x += 16) {
-      if (!flatId(x + 8, y + 8) || inset[(y + 8) * W + x + 8] < 14 || rand() > 0.015) continue;
-      const wp = toWorldPx(x + 8, y + 8);
-      if (style.roof?.({ x: Math.floor(wp.x), y: Math.floor(wp.y), fx: wp.x / b.w, fy: wp.y / b.h, inset: 99, level: part(x + 8, y + 8) })) continue;
-      const ry = top + y - hr(x + 8, y + 8);
-      paintRect(paint, x + 2, ry + 2, 12, 7, 'roof2');
-      paintRect(paint, x + 2, ry + 9, 12, 3, 'roof0');
-    }
+  if (style || lookTop.rooftop === 'equipment')
+    for (let y = 0; y + 16 <= H; y += 16)
+      for (let x = 0; x + 16 <= W; x += 16) {
+        if (!onTop(x + 8, y + 8, 14) || rand() > 0.015 || !free(x + 8, y + 8)) continue;
+        const ry = top + y - hr(x + 8, y + 8);
+        paintRect(paint, x + 2, ry + 2, 12, 7, 'roof2');
+        paintRect(paint, x + 2, ry + 9, 12, 3, 'roof0');
+      }
 
   if (b.style === 'info') {
     if (light) renderInfoCrown(pix, part, W, H, hr, top, face, paint);
@@ -442,6 +511,7 @@ const SHADES: PalKey[][] = [
   ['grey0', 'grey1', 'grey2', 'grey3'],
   ['plain0', 'plain1', 'plain2'],
   ['glass0', 'glass1', 'glass2'],
+  ...Object.values(RAMPS).filter((r) => !['beige', 'grey', 'plain'].includes(r[0].replace(/\d$/, ''))),
 ];
 function shadeKey(c: PalKey, d: number): PalKey {
   for (const ramp of SHADES) {

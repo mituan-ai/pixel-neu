@@ -3,7 +3,7 @@
 import { BUILDING } from './tiles.ts';
 import { toWorld, type P } from './geo.ts';
 import { PPM, fillShape, inPoly, inShape } from './shape.ts';
-import type { Part, Shape, Survey } from './survey.ts';
+import type { Feature, Part, Shape, Survey } from './survey.ts';
 import { EXTENT } from './geo.ts';
 
 export interface OsmEl {
@@ -22,7 +22,12 @@ export interface PartModel {
   rise: number;
   /** 看台朝向的点（世界像素） */
   toward?: P;
+  /** 这个分区换用的楼型 */
+  look?: string;
 }
+
+/** 落在这栋楼墙上的门（世界米坐标） */
+export type DoorModel = Survey['doors'][number];
 
 export interface BuildingModel {
   id: number;
@@ -38,6 +43,11 @@ export interface BuildingModel {
   parts: PartModel[];
   /** 顶上另加的高度（信息学馆的塔顶） */
   extraTop: number;
+  /** 楼型、单栋微调和特色构件（见 survey.ts 的 Appearance） */
+  look: string;
+  tweak: Record<string, unknown>;
+  features: Feature[];
+  doors: DoorModel[];
 }
 
 /** 只给核实过名字的楼标名字 */
@@ -48,8 +58,9 @@ const NAMED: Record<number, { name: string; style: BuildingModel['style'] }> = {
 
 export const levelPx = (storeys: number) => storeys * BUILDING.storey + BUILDING.plinth + BUILDING.parapet;
 
-function partOf(p: { storeys?: number; height?: number; roof?: Part['roof']; rise?: number; toward?: P }, storeys: number): PartModel {
+function partOf(p: { storeys?: number; height?: number; roof?: Part['roof']; rise?: number; toward?: P; look?: string }, storeys: number): PartModel {
   return {
+    look: p.look,
     wall: p.height !== undefined ? Math.round(p.height * PPM) : levelPx(p.storeys ?? storeys),
     roof: p.roof ?? 'flat',
     rise: Math.round((p.rise ?? 0) * PPM),
@@ -88,8 +99,18 @@ export function loadBuildings(osm: { elements: OsmEl[] }, survey: Survey, gateX:
     for (let k = 0; k < px.length; k += 2) (x0 = Math.min(x0, px[k])), (x1 = Math.max(x1, px[k])), (y0 = Math.min(y0, px[k + 1])), (y1 = Math.max(y1, px[k + 1]));
     const w = x1 - x0 + 1, h = y1 - y0 + 1;
     const meta = NAMED[src.id] ?? { name: '', style: 'plain' as const };
-    const b: BuildingModel = { id: src.id, name: fix.name ?? meta.name, style: meta.style, x: x0, y: y0, w, h, part: new Uint8Array(w * h), parts: [partOf(fix, storeys)], extraTop: 0 };
+    const b: BuildingModel = {
+      id: src.id, name: fix.name ?? meta.name, style: meta.style, x: x0, y: y0, w, h, part: new Uint8Array(w * h), parts: [partOf({ ...fix, look: undefined }, storeys)], extraTop: 0,
+      look: fix.look ?? 'neutral', tweak: fix.tweak ?? {}, features: fix.features ?? [], doors: [],
+    };
     for (let k = 0; k < px.length; k += 2) b.part[(px[k + 1] - y0) * w + px[k] - x0] = 1;
+    // 门：从门洞中点往墙里退 1 m 落在这栋楼上的，算这栋楼的门
+    const inside = (wx: number, wy: number) => {
+      const x = Math.floor((wx - EXTENT.x0) * PPM) - x0, y = Math.floor((wy - EXTENT.y0) * PPM) - y0;
+      return x >= 0 && y >= 0 && x < w && y < h && b.part[y * w + x] > 0;
+    };
+    const IN: Record<string, P> = { N: [0, 1], S: [0, -1], E: [-1, 0], W: [1, 0] };
+    b.doors = survey.doors.filter((d) => inside(d.at[0] + IN[d.facing][0], d.at[1] + IN[d.facing][1]));
     const zones: Part[] = [...(fix.parts ?? [])];
     // 信息学馆（据航拍 R-info-06-02、正面照 R-info-01）：两翼 5 层；中轴上的中央楼 7 层，宽约 26 m、
     // 从北墙往南约 19.5 m（宽深据卫星图 S7 上中央楼的屋面）；楼顶再有退台、小塔和旗杆
@@ -121,6 +142,20 @@ export function heights(b: BuildingModel): Float32Array {
     if (!idx.length) return;
     if (p.roof === 'flat') {
       for (const i of idx) hgt[i] = p.wall;
+      return;
+    }
+    if (p.roof === 'gable' || p.roof === 'hip') {
+      // 坡屋顶：屋脊沿外接框长边；双坡只按到长边的距离起坡，四坡再加上到短边的距离
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const i of idx) (x0 = Math.min(x0, i % b.w)), (x1 = Math.max(x1, i % b.w)), (y0 = Math.min(y0, (i / b.w) | 0)), (y1 = Math.max(y1, (i / b.w) | 0));
+      const wide = x1 - x0 >= y1 - y0, half = ((wide ? y1 - y0 : x1 - x0) + 1) / 2;
+      for (const i of idx) {
+        const x = i % b.w, y = (i / b.w) | 0;
+        const across = wide ? Math.min(y - y0, y1 - y) : Math.min(x - x0, x1 - x);
+        const along = wide ? Math.min(x - x0, x1 - x) : Math.min(y - y0, y1 - y);
+        const d = p.roof === 'hip' ? Math.min(across, along) : across;
+        hgt[i] = p.wall + p.rise * Math.min(1, (d + 0.5) / half);
+      }
       return;
     }
     if (p.roof === 'dome') {
