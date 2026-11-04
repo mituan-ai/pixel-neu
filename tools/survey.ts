@@ -155,8 +155,9 @@ export interface Survey {
    * 楼门：at 是门洞中点（落在墙脚线上），facing 是门朝外的方向，main 是正门。
    * 楼的贴图按它在墙上开门洞：width 门洞宽（米，默认正门 3、侧门 1.8），height 门洞高（米，默认 2.6）；
    * canopy 是门头：slab 一块挑出的雨棚板（正门默认），portico 两根柱子撑的门廊，none 没有（侧门默认）
+   * guess：推断的门（资料都看不出门，按 docs/mapping.md「推断门」兜底），有照片后要改掉
    */
-  doors: { at: P; facing: Face; main?: boolean; width?: number; height?: number; canopy?: 'slab' | 'portico' | 'none' }[];
+  doors: { at: P; facing: Face; main?: boolean; width?: number; height?: number; canopy?: 'slab' | 'portico' | 'none'; guess?: boolean }[];
   /** 单车停放排：车头朝向和排垂直，从 from 到 to 每 0.7 m 一辆；covered 是有棚的（多为电动车棚） */
   bikeRacks: { from: P; to: P; covered?: boolean }[];
   /** 兴趣点（介绍卡片）：at 是卡片触发的位置（楼的正门外、纪念物旁），text 每句都要有来源，src 是 S 号，逗号分隔 */
