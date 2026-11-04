@@ -62,6 +62,11 @@ if (cmd === 'start') {
   git(wt, 'config', 'submodule.art.url', join(ROOT, 'art'));
   execFileSync('git', ['-c', 'protocol.file.allow=always', 'submodule', 'update', '--init'], { cwd: wt, stdio: 'ignore' });
   for (const f of LOCAL) if (existsSync(join(ROOT, f)) && !existsSync(join(wt, f))) symlinkSync(join(ROOT, f), join(wt, f));
+  // .gitignore 里的 node_modules/、data/ref/ 只匹配目录，链接要另外排除
+  const exclude = join(git(ROOT, 'rev-parse', '--git-common-dir'), 'info/exclude');
+  const have = existsSync(exclude) ? readFileSync(exclude, 'utf8') : '';
+  const add = LOCAL.filter((f) => !have.split('\n').includes(`/${f}`)).map((f) => `/${f}\n`).join('');
+  if (add) writeFileSync(exclude, have + (have && !have.endsWith('\n') ? '\n' : '') + add);
   const log = openSync(join(HOME, `${t}.log`), 'w');
   const child = spawn('codex', ['exec', '-C', wt, '-s', 'workspace-write', '-c', 'sandbox_workspace_write.network_access=true', '-o', join(HOME, `${t}.md`), prompt(path)], {
     detached: true,
