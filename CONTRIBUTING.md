@@ -6,7 +6,7 @@
 
 - **画美术**：看 [art/CONTRIBUTING.md](art/CONTRIBUTING.md)，画好放进 `art/` 提 PR。不用懂代码。
 - **校对地图**：发现楼、路、树、门的位置或样子不对，开 issue 写清位置和依据（照片链接、拍摄时间、相机朝向）。描图规则见 [docs/mapping.md](docs/mapping.md)，已登记的资料见 [docs/sources.md](docs/sources.md)。
-- **写代码**：待办清单在 [docs/roadmap.md](docs/roadmap.md)。较大的改动先开 issue 说一下想法，免得白做。
+- **写代码**：可以先看 [Issues](https://github.com/mituan-ai/pixel-neu/issues)。较大的改动先开 issue 说一下想法，免得白做。
 
 [AGENTS.md](AGENTS.md) 是项目约定的总表（比例、方向、目录、技术约定），人和 AI 编程助手都按它来。
 

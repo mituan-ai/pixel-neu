@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const HOME = join(dirname(ROOT), `${basename(ROOT)}-codex`);
 /** 不进仓库、但描图要用的本地资料：链接进 worktree（只读用） */
-const LOCAL = ['node_modules', 'data/sat-2025-07-31.png', 'data/sat-2026-10-29.png', 'data/sat-tianditu.png', 'data/ref', '.env.local'];
+const LOCAL = ['node_modules', 'data/sat-2025-07-31.png', 'data/sat-2026-10-29.png', 'data/sat-tianditu.png', 'data/ref', '.env.local', 'docs/roadmap.md', 'docs/map-audit.md'];
 
 const [cmd, task] = process.argv.slice(2);
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();

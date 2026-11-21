@@ -16,3 +16,5 @@ art-inbox/*
 !art-inbox/AGENTS.md
 data/*.db*
 data/badwords.txt
+docs/roadmap.md
+docs/map-audit.md
