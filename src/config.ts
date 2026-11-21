@@ -9,6 +9,9 @@ export const COMMUNITY = {
   },
 } as const;
 
+/** 源码仓库，菜单「参与开发」里给出 */
+export const REPO_URL = 'https://github.com/mituan-ai/pixel-neu';
+
 /** 分享时用的地址：线上域名确定后填写，留空就用当前页面地址 */
 export const SITE_URL = '';
 

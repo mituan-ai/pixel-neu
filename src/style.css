@@ -852,6 +852,14 @@ textarea {
   height: 100%;
 }
 
+/* 参与开发：仓库地址可以长按选中 */
+.repo-url {
+  color: var(--blue-dark);
+  word-break: break-all;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 /* 分享海报 */
 .poster {
   width: 100%;

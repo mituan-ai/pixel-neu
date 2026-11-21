@@ -1,7 +1,7 @@
-// 菜单：我的资料 / 登录、设置、操作说明、加入社群、分享、关于、用户协议、隐私政策。
+// 菜单：我的资料 / 登录、设置、操作说明、加入社群、参与开发、分享、关于、用户协议、隐私政策。
 import type { IconName } from '../../shared/icons.ts';
 import { account } from '../account.ts';
-import { COMMUNITY, shareUrl } from '../config.ts';
+import { COMMUNITY, REPO_URL, shareUrl } from '../config.ts';
 import { ABOUT, HELP, PRIVACY, TERMS, type Doc } from '../legal.ts';
 import { settings } from '../settings.ts';
 import { button, copyText, el, icon, Sheet, toast } from './dom.ts';
@@ -51,6 +51,7 @@ export class Menu {
     item('设置', 'settings', () => this.settings());
     item('操作说明', 'help', () => this.doc('操作说明', HELP.map(([k, v]) => [k, v])));
     item('加入社群', 'group', () => this.community());
+    item('参与开发', 'pencil', () => this.contribute());
     item('分享', 'share', () => this.share());
     item('关于', 'people', () => this.doc('关于', ABOUT));
     item('用户协议', 'pin', () => this.doc('用户协议', TERMS));
@@ -152,7 +153,22 @@ export class Menu {
       qqLines.push(row);
     } else qqLines.push(el('p', 'fine', '群号即将公布'));
     card('QQ 群', qqLines, qq.qr);
+  }
 
+  contribute(): void {
+    const b = this.sub('参与开发');
+    b.append(el('p', '', '像素东大是开源项目，代码、美术和地图数据都公开在 GitHub 上，谁都可以参与。'));
+    b.append(el('h3', '', '最缺美术'));
+    b.append(el('p', '', '楼的立面、路灯长椅这类物件、树、人物的发型和衣服。按 1 米 = 8 像素画，不用懂代码，规范见仓库里的 art/CONTRIBUTING.md。'));
+    b.append(el('h3', '', '也欢迎'));
+    const ul = el('ul');
+    ul.append(el('li', '', '校对地图：哪栋楼、哪条路不对，提 issue 写清位置，附上照片'), el('li', '', '写代码：TypeScript，前端 Phaser，服务端 Colyseus'));
+    b.append(ul, el('p', 'repo-url', REPO_URL.replace('https://', '')));
+    const row = el('div', 'row');
+    // 微信里打不开外链，只给复制
+    if (!isWeChat()) row.append(button('打开 GitHub', 'small primary', () => window.open(REPO_URL, '_blank', 'noopener')));
+    row.append(button('复制链接', 'small', async () => toast((await copyText(REPO_URL)) ? '链接已复制，用浏览器打开' : '复制失败，请手动记下地址')));
+    b.append(row, el('p', 'fine', '代码 MIT，美术 CC-BY 4.0，地图数据 ODbL 1.0。'));
   }
 
   async share(): Promise<void> {

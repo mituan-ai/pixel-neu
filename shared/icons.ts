@@ -4,7 +4,7 @@
 export const ICONS = [
   // 操作
   'chat', 'send', 'emote', 'menu', 'close', 'back', 'map', 'share', 'login', 'logout', 'group', 'settings',
-  'report', 'block', 'people', 'pin', 'rotate-left', 'rotate-right', 'zoom-in', 'zoom-out', 'sound-on', 'sound-off', 'help',
+  'report', 'block', 'people', 'pin', 'rotate-left', 'rotate-right', 'zoom-in', 'zoom-out', 'sound-on', 'sound-off', 'help', 'pencil',
   // 天气：实况天气归成这几类
   'sunny', 'clear-night', 'cloudy', 'cloudy-night', 'overcast', 'rain-light', 'rain-heavy', 'thunder', 'snow', 'sleet', 'fog', 'haze',
   // 月相：0 新月、2 上弦、4 满月、6 下弦
