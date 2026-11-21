@@ -580,7 +580,7 @@ const buildingArt = new Map<string, Pix>();
   const gpl = ['GIMP Palette', 'Name: Pixel NEU', 'Columns: 8', '#'];
   for (const [name, v] of entries) gpl.push(`${(v >> 16) & 255} ${(v >> 8) & 255} ${v & 255}\t${name}`);
   writeFileSync(out('palette.gpl'), gpl.join('\n') + '\n');
-  // 公开美术仓库（art/ 子模块）里放同一份，投稿人用它
+  // art/ 里放同一份，投稿人用它
   writeFileSync(new URL('../art/palette.gpl', import.meta.url), gpl.join('\n') + '\n');
   const sw = new Pix(8 * 8, Math.ceil(entries.length / 8) * 8);
   entries.forEach(([, v], i) => sw.rect((i % 8) * 8, Math.floor(i / 8) * 8, 8, 8, v));

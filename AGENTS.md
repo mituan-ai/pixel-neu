@@ -23,7 +23,8 @@
 ## 目录
 
 ```
-art/      公开美术仓库 mituan-ai/pixel-neu-art 的 git 子模块：物件 props/、立面 facades/、Q 版角色底模和发型 chibi/。npm run art 读它们生成 assets/；投稿规范见 art/CONTRIBUTING.md
+.github/  CI（类型检查和测试；art/ 校验）和 PR 模板
+art/      美术源文件：物件 props/、立面 facades/、Q 版角色底模和发型 chibi/、色板 palette.gpl。npm run art 读它们生成 assets/；投稿规范见 art/CONTRIBUTING.md
 art-inbox/ 美术草稿与第三方候选素材，审核通过的移到 art/；约束见 art-inbox/AGENTS.md，除该文件外不进仓库
 assets/   运行时资源（Vite publicDir），美术约束见 assets/AGENTS.md；ground/ 是 npm run map 烘焙的地面分块
 data/     原始资料：osm.json（OSM）、survey.json（从卫星图描的地面、树、楼基校正）；sat-*.png、check.png、parallax.png、ref/（照片和视频截图）是本地参考，不进仓库
@@ -42,7 +43,6 @@ Codex 的 worktree 在仓库旁边的 `../pixel-neu-codex/`，不在仓库里。
 ## 命令
 
 ```
-git submodule update --init   拉 art/ 子模块（新克隆时）
 npm run dev        前端（Vite，/colyseus 代理到 2567）
 npm run server     服务端（带 --dev：放行 Shift 5 倍速，验证码打印在日志里；线上用 npm start）
 npm test           测试
@@ -86,10 +86,9 @@ node tools/codex.ts    把任务单交给 Codex：start / status / check / merge
 
 ## 署名与许可
 
-- 本仓库（代码、`tools/` 生成的美术、`data/survey.json`）© 谜团 mituan，保留所有权利（`package.json` 为 `UNLICENSED`），仓库不公开。
-- `art/` 子模块是公开仓库：原创素材按 CC-BY 4.0 发布，`art/chibi/` 的第三方部件是 CC0。只把别人能贡献的源文件放进去；代码、survey.json、`data/`、`art-inbox/` 草稿和参考照片都不进公开仓库。
-- 改 `art/` 先在子模块里提交、推送公开仓库，再在本仓库提交子模块指针。
-- 第三方素材只用 CC0、CC-BY、OGA-BY、CC-BY-SA 授权的，逐件登记到 `assets/CREDITS.md`。CC-BY-SA 素材及其改作按 CC-BY-SA 发布，不在保留权利范围内。
+- 仓库公开。代码和文档按 MIT（根目录 `LICENSE`）；`art/` 的素材和 `assets/` 里的图片按 CC-BY 4.0（`art/LICENSE`），`art/chibi/` 的第三方原图是 CC0；地图数据（`data/osm.json`、`data/survey.json`、`assets/map.json`）含 OSM 数据，按 ODbL 1.0；字体按 OFL 1.1。贡献按同样的许可进来。分界写在 README「许可」，新增目录或换许可要同步改那里。
+- 公开仓库里不能出现：照片、卫星图和参考截图（`data/ref/`、`data/sat-*.png` 等）、`art-inbox/` 草稿、`.env.local` 里的密钥、数据库、敏感词表、真实手机号。它们大多已在 `.gitignore` 里，提交前看一眼 `git status`。
+- 第三方素材只用 CC0、CC-BY、OGA-BY、CC-BY-SA 授权的，逐件登记到 `assets/CREDITS.md`。CC-BY-SA 素材及其改作按 CC-BY-SA 发布。
 - 加载页和「关于」写明「非官方作品」；「© OpenStreetMap 贡献者」写在「关于」和全图右下角，主界面不放署名。不用校徽和学校官方标识，不暗示学校授权。
 
 ## 提交前

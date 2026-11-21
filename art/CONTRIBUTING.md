@@ -2,11 +2,11 @@
 
 ## 流程
 
-1. Fork 本仓库，新建分支。
-2. 按下面的规范画图，放进对应目录。
-3. 本地跑 `pip install pillow && python tools/check.py`，没有问题再提交。脚本会生成 `sheet.png` 联系表，自己看一眼比例。
+1. Fork [mituan-ai/pixel-neu](https://github.com/mituan-ai/pixel-neu)，新建分支。
+2. 按下面的规范画图，放进 `art/` 下对应的目录。
+3. 在仓库根目录跑 `pip install pillow && python art/tools/check.py`，没有问题再提交。脚本会生成 `art/sheet.png` 联系表，自己看一眼比例。
 4. 提 Pull Request，按模板填写依据和许可。CI 会再校验一遍，联系表在 Actions 页面的 Artifacts 里下载。
-5. 维护者审核，接进游戏后会在游戏的署名表里写上你的名字。
+5. 维护者审核，接进生成器（`tools/art.ts`），在游戏的署名表里写上你的名字。想自己先在游戏里看效果，按根目录 [CONTRIBUTING.md](../CONTRIBUTING.md) 把游戏跑起来；接进生成器这一步也可以交给维护者。
 
 ## 真实性
 
@@ -76,4 +76,4 @@ PNG、RGBA、整像素。不要抗锯齿，不要半透明（投影除外），�
 
 ## 许可
 
-提交 PR 即表示：投稿是你本人创作，或你有权按上面的许可证提交；原创内容按 CC-BY 4.0 授权给本项目和所有人使用。
+提交 PR 即表示：投稿是你本人创作，或你有权按上面的许可证提交；原创美术按 CC-BY 4.0 授权给本项目和所有人使用（代码部分按 MIT，见根目录 README 的「许可」）。

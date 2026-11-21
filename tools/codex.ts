@@ -58,9 +58,6 @@ if (cmd === 'start') {
   if (existsSync(wt)) throw new Error(`${wt} 已经有了：先 drop 或 merge`);
   mkdirSync(HOME, { recursive: true });
   git(ROOT, 'worktree', 'add', '-b', `codex/${t}`, wt);
-  // art/ 子模块从本机的副本克隆，不走网络
-  git(wt, 'config', 'submodule.art.url', join(ROOT, 'art'));
-  execFileSync('git', ['-c', 'protocol.file.allow=always', 'submodule', 'update', '--init'], { cwd: wt, stdio: 'ignore' });
   for (const f of LOCAL) if (existsSync(join(ROOT, f)) && !existsSync(join(wt, f))) symlinkSync(join(ROOT, f), join(wt, f));
   // .gitignore 里的 node_modules/、data/ref/ 只匹配目录，链接要另外排除
   const exclude = join(ROOT, git(ROOT, 'rev-parse', '--git-common-dir'), 'info/exclude');

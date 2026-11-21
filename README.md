@@ -2,7 +2,9 @@
 
 在像素风的东北大学南湖校区里走走，碰见同样在线的人，挥个手、说句话。
 
-> 谜团 mituan 开发的个人非官方作品，与东北大学没有隶属或授权关系。
+> 谜团 mituan 发起的非官方作品，与东北大学没有隶属或授权关系。
+
+开源项目，代码 MIT、美术 CC-BY 4.0。最缺的是美术：楼的立面、物件、树、人物的发型和衣服，欢迎一起画，也欢迎校对地图、写代码。见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 玩法
 
@@ -40,6 +42,12 @@ npm run dev      # 前端
 
 ## 许可
 
-- 代码与美术 © 谜团 mituan，保留所有权利
-- 地图数据 © [OpenStreetMap](https://www.openstreetmap.org/copyright) 贡献者，ODbL
-- 字体 [Fusion Pixel](https://github.com/TakWolf/fusion-pixel-font)，OFL-1.1
+| 内容 | 许可 |
+|---|---|
+| 代码和文档（`src/`、`server/`、`shared/`、`tools/`、`tests/`、`docs/`、`art/tools/` 等） | [MIT](LICENSE) |
+| 美术：`art/` 的素材和 `assets/` 里的图片 | [CC-BY 4.0](art/LICENSE)，署名「像素东大 · Pixel NEU 及贡献者」并附本仓库链接 |
+| `art/chibi/` 的 Q 版底模和发型原图 | CC0 1.0，作者见 [art/chibi/README.md](art/chibi/README.md) |
+| 地图数据：`data/osm.json`、`data/survey.json`、`assets/map.json` | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/)，含 © [OpenStreetMap](https://www.openstreetmap.org/copyright) 贡献者的数据 |
+| 字体 [Fusion Pixel](https://github.com/TakWolf/fusion-pixel-font)（`assets/fonts/`） | [SIL OFL 1.1](assets/fonts/OFL-fusion-pixel.txt) |
+
+第三方素材逐件登记在 [assets/CREDITS.md](assets/CREDITS.md)。许可不涉及东北大学的名称和标识，本项目也不使用它们。

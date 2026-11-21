@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "像素东大 · Pixel NEU —— 东北大学南湖校区像素风多人校园漫游",
   "author": "谜团 mituan",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/mituan-ai/pixel-neu.git"
