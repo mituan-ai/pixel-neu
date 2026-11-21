@@ -19,10 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-This license covers the code and documentation. Art in art/ and the images in
-assets/ are licensed under CC BY 4.0 (see art/LICENSE), map data under ODbL 1.0,
-and third-party files under their own licenses. See the "许可" section of
-README.md for the full breakdown.
